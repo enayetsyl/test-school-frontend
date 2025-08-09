@@ -59,6 +59,7 @@
     "@types/node": "^24.2.1",
     "@types/react": "^19.1.9",
     "@types/react-dom": "^19.1.7",
+    "@types/redux-persist": "^4.0.0",
     "@typescript-eslint/eslint-plugin": "^8.39.0",
     "@typescript-eslint/parser": "^8.39.0",
     "@vitejs/plugin-react": "^4.7.0",

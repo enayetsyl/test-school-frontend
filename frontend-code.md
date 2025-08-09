@@ -254,10 +254,61 @@ export default defineConfig({
 
 ```javascript
 // src/app/App.tsx
+import { RouterProvider } from "react-router-dom";
+
+import { ThemeProvider } from "./ThemeProvider";
+import { Toaster } from "sonner";
+import { router } from "./router";
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <RouterProvider router={router} />
+      <Toaster richColors position="top-right" theme="system" />
+    </ThemeProvider>
+  );
+}
 ```
 
 ```javascript
-// src/app/router.tsx
+// src/app/ThemeProvider.tsx
+import { useEffect, useMemo, useState } from "react";
+import { ThemeCtx, type Theme } from "./theme-context";
+
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setTheme] = useState<Theme>(() => {
+    try {
+      return (localStorage.getItem("theme") as Theme | null) ?? "system";
+    } catch {
+      return "system";
+    }
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+
+    const apply = (t: Theme) => {
+      const isDark = t === "dark" || (t === "system" && media.matches);
+      root.classList.toggle("dark", isDark);
+    };
+
+    apply(theme);
+    try {
+      localStorage.setItem("theme", theme);
+    } catch {  void 0; }
+
+    if (theme === "system") {
+      const handler = () => apply("system");
+      media.addEventListener("change", handler);
+      return () => media.removeEventListener("change", handler);
+    }
+  }, [theme]);
+
+  const value = useMemo(() => ({ theme, setTheme }), [theme]);
+  return <ThemeCtx.Provider value={value}>{children}</ThemeCtx.Provider>;
+}
+
 ```
 
 ```javascript
@@ -1355,10 +1406,98 @@ export function cn(...inputs: ClassValue[]) {
 
 ```javascript
 // src/services/auth.api.ts
+import { baseApi } from "./baseApi";
+import { setCredentials, clearAuth } from "@/store/auth.slice";
+import type { ApiUser } from "@/types/user";
+import { toAppUser } from "@/types/user";
+
+type LoginBody = { email: string; password: string };
+type LoginResult = { user: ApiUser; accessToken: string };
+type MeResult = { user: ApiUser };
+
+export const authApi = baseApi.injectEndpoints({
+  endpoints: (b) => ({
+    login: b.mutation<LoginResult, LoginBody>({
+      query: (body) => ({ url: "/auth/login", method: "POST", data: body }),
+      async onQueryStarted(_, { dispatch, queryFulfilled }) {
+        try {
+          const { data } = await queryFulfilled;
+          dispatch(setCredentials({ user: toAppUser(data.user), accessToken: data.accessToken }));
+        } catch {
+          /* ignore */
+        }
+      },
+    }),
+
+    me: b.query<MeResult, void>({
+      query: () => ({ url: "/users/me" }),
+      providesTags: ["Me"],
+    }),
+
+    logout: b.mutation<void, void>({
+      query: () => ({ url: "/auth/logout", method: "POST" }),
+      async onQueryStarted(_, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+        } finally {
+          dispatch(clearAuth());
+        }
+      },
+    }),
+  }),
+});
+
+export const { useLoginMutation, useMeQuery, useLogoutMutation } = authApi;
+
 ```
 
 ```javascript
 // src/services/baseApi.ts
+import { createApi } from "@reduxjs/toolkit/query/react";
+import type { BaseQueryFn } from "@reduxjs/toolkit/query";
+import type { AxiosRequestConfig } from "axios";
+import axios from "axios";
+import { api } from "@/utils/axios";
+
+type QueryArgs = {
+  url: string;
+  method?: AxiosRequestConfig["method"];
+  data?: unknown;
+  params?: unknown;
+  headers?: Record<string, string>;
+};
+
+export type BaseQueryError = {
+  status: number;
+  data: unknown;
+};
+
+const axiosBaseQuery =
+  ():
+  BaseQueryFn<QueryArgs, unknown, BaseQueryError> =>
+  async ({ url, method = "GET", data, params, headers }) => {
+    try {
+      const res = await api({ url, method, data, params, headers });
+      // backend wraps success in { success, data }
+      return { data: (res.data as { data?: unknown })?.data ?? res.data };
+    } catch (e: unknown) {
+      if (axios.isAxiosError(e)) {
+        const status = e.response?.status ?? 500;
+        const respData = e.response?.data ?? { message: e.message };
+        return { error: { status, data: respData } };
+      }
+      const message = e instanceof Error ? e.message : "Unknown error";
+      return { error: { status: 500, data: { message } } };
+    }
+  };
+
+export const baseApi = createApi({
+  reducerPath: "api",
+  baseQuery: axiosBaseQuery(),
+  tagTypes: ["Me", "Users", "Competencies", "Questions", "Sessions", "Certs", "Config"],
+  endpoints: () => ({}),
+});
+
 ```
 
 ```javascript
@@ -1383,6 +1522,34 @@ export function cn(...inputs: ClassValue[]) {
 
 ```javascript
 // src/store/auth.slice.ts
+import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
+import type { AppUser } from "@/types/user";
+
+type AuthState = {
+  user: AppUser | null;
+  accessToken: string | null;
+};
+
+const initialState: AuthState = { user: null, accessToken: null };
+
+const authSlice = createSlice({
+  name: "auth",
+  initialState,
+  reducers: {
+    setCredentials: (state, action: PayloadAction<{ user: AppUser; accessToken: string }>) => {
+      state.user = action.payload.user;
+      state.accessToken = action.payload.accessToken;
+    },
+    clearAuth: (state) => {
+      state.user = null;
+      state.accessToken = null;
+    },
+  },
+});
+
+export const { setCredentials, clearAuth } = authSlice.actions;
+export default authSlice.reducer;
+
 ```
 
 ```javascript
@@ -1391,14 +1558,60 @@ export function cn(...inputs: ClassValue[]) {
 
 ```javascript
 // src/store/persistConfig.ts
+import storage from "redux-persist/lib/storage";
+export const persistConfig = {
+  key: "root",
+  version: 1,
+  storage,
+  whitelist: ["auth"],
+};
 ```
 
 ```javascript
 // src/store/store.ts
+import { configureStore, combineReducers } from "@reduxjs/toolkit";
+import { persistReducer, persistStore } from "redux-persist";
+import auth from "./auth.slice";
+import ui from "./ui.slice";
+import { baseApi } from "@/services/baseApi";
+import { persistConfig } from "./presistConfig";
+
+
+const rootReducer = combineReducers({
+  auth,
+  ui,
+  [baseApi.reducerPath]: baseApi.reducer,
+});
+const persisted = persistReducer(persistConfig, rootReducer);
+
+export const store = configureStore({
+  reducer: persisted,
+  middleware: (gDM) => gDM({ serializableCheck: false }).concat(baseApi.middleware),
+});
+export const persistor = persistStore(store);
+
+export type RootState = ReturnType<typeof store.getState>;
+export type AppDispatch = typeof store.dispatch;
+
 ```
 
 ```javascript
 // src/store/ui.slice.ts
+import { createSlice } from "@reduxjs/toolkit";
+const slice = createSlice({
+  name: "ui",
+  initialState: { globalLoading: false },
+  reducers: {
+    startLoading: (s) => {
+      s.globalLoading = true;
+    },
+    stopLoading: (s) => {
+      s.globalLoading = false;
+    },
+  },
+});
+export const { startLoading, stopLoading } = slice.actions;
+export default slice.reducer;
 ```
 
 ```javascript
@@ -1414,7 +1627,130 @@ export function cn(...inputs: ClassValue[]) {
 ```
 
 ```javascript
-// src/types/user.d.ts
+// src/types/user.ts
+export type Role = "admin" | "student" | "supervisor";
+
+// Shape returned by backend (name can be missing/null)
+export type ApiUser = {
+  id: string;
+  email: string;
+  role: Role;
+  name?: string | null;
+};
+
+// Shape we keep in Redux (name always present)
+export type AppUser = {
+  id: string;
+  email: string;
+  role: Role;
+  name: string;
+};
+
+export function toAppUser(u: ApiUser): AppUser {
+  return {
+    id: u.id,
+    email: u.email,
+    role: u.role,
+    // fallback if name is missing/empty → use email's local-part
+    name: (u.name ?? "").trim() || u.email.split("@")[0],
+  };
+}
+
+```
+
+```javascript
+// src/utils/axios.ts
+import axios, {
+  AxiosError,
+  type InternalAxiosRequestConfig,
+} from "axios";
+import { store } from "@/store/store";
+import { setCredentials, clearAuth } from "@/store/auth.slice";
+import type { AppUser } from "@/types/user";
+
+// Add a typed custom flag to axios config (no `as any`)
+declare module "axios" {
+  interface AxiosRequestConfig {
+    _retry?: boolean;
+  }
+  interface InternalAxiosRequestConfig {
+    _retry?: boolean;
+  }
+}
+
+export const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL as string,
+  withCredentials: true,
+});
+
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  const token = store.getState().auth.accessToken;
+  if (token) config.headers.set("Authorization", `Bearer ${token}`);
+  return config;
+});
+
+let refreshing = false;
+let waiters: Array<() => void> = [];
+
+type RefreshPayload = { accessToken: string };
+type RefreshResponse = { success: boolean; data: RefreshPayload };
+type MeResponse = { success: boolean; data: { user: AppUser } };
+
+api.interceptors.response.use(
+  (r) => r,
+  async (error: AxiosError) => {
+    const { response } = error;
+    const original = error.config;
+    if (!response || response.status !== 401 || original?._retry) {
+      return Promise.reject(error);
+    }
+
+    if (refreshing) {
+      await new Promise<void>((res) => waiters.push(res));
+    } else {
+      refreshing = true;
+      try {
+        const resp = await api.post<RefreshResponse>("/auth/token/refresh");
+        const accessToken = resp.data?.data?.accessToken;
+
+        if (accessToken) {
+          const prev = store.getState().auth;
+
+          if (prev.user) {
+            // We already have a user; just update the token
+            store.dispatch(setCredentials({ user: prev.user, accessToken }));
+          } else {
+            // No user in store—fetch it with the fresh token (pass header explicitly)
+            try {
+              const meResp = await api.get<MeResponse>("/users/me", {
+                headers: { Authorization: `Bearer ${accessToken}` },
+              });
+              store.dispatch(
+                setCredentials({ user: meResp.data.data.user, accessToken })
+              );
+            } catch {
+              store.dispatch(clearAuth());
+            }
+          }
+        } else {
+          store.dispatch(clearAuth());
+        }
+      } catch {
+        store.dispatch(clearAuth());
+      } finally {
+        refreshing = false;
+        waiters.forEach((w) => w());
+        waiters = [];
+      }
+    }
+
+    // retry the original request once
+     if (!original) return Promise.reject(error); // <- narrow
+    original._retry = true;
+    return api.request(original);
+  }
+);
+
 ```
 
 ```javascript
@@ -1427,6 +1763,85 @@ export function cn(...inputs: ClassValue[]) {
 
 ```javascript
 // src/utils/extractApiError.ts
+
+export type ApiErrorCode =
+  | 'VALIDATION_ERROR' | 'AUTH_REQUIRED' | 'FORBIDDEN' | 'NOT_FOUND'
+  | 'CONFLICT' | 'RATE_LIMITED' | 'SERVER_ERROR' | 'INVALID_CREDENTIALS'
+  | 'INVALID_OTP' | 'EXAM_LOCKED' | 'SESSION_NOT_FOUND'
+  | 'QUESTION_NOT_FOUND' | 'CERT_NOT_FOUND' | 'CSV_PARSE_ERROR' | 'FILE_TOO_LARGE'
+  | (string & {}); // allow future codes without breaking
+// ^ list documented in your API reference
+
+export type ApiErrorResponse = {
+  success: false;
+  code: ApiErrorCode;
+  message: string;
+  // zod-like details often include `issues`, but keep this flexible
+  details?: unknown;
+};
+
+export type RtkAxiosError = {
+  status?: number;
+  // `data` can be the server error JSON, or sometimes a string message
+  data?: ApiErrorResponse | { message?: string; error?: string } | string;
+};
+
+// Small type guards (no `any` needed)
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null;
+}
+function getStr(obj: unknown, key: string): string | undefined {
+  return isRecord(obj) && typeof obj[key] === 'string' ? (obj[key] as string) : undefined;
+}
+function hasData(obj: unknown): obj is { data?: unknown } {
+  return isRecord(obj) && 'data' in obj;
+}
+
+/**
+ * Extract a human-readable error message from:
+ * - RTK Query axiosBaseQuery errors (`{ status, data }`)
+ * - plain Error
+ * - arbitrary objects that might have `message` or `error`
+ */
+export function extractApiError(err: unknown): string {
+  // RTK baseQuery axios error: prefer server-provided message
+  if (hasData(err)) {
+    const d = (err as { data?: unknown }).data;
+
+    if (typeof d === 'string' && d.trim()) return d;
+
+    if (isRecord(d)) {
+      const msg = getStr(d, 'message') ?? getStr(d, 'error');
+      if (msg) return msg;
+    }
+  }
+
+  // Plain Error
+  if (err instanceof Error && err.message) return err.message;
+
+  // Object with a message/error field
+  const fallback = getStr(err, 'message') ?? getStr(err, 'error');
+  return fallback ?? 'Something went wrong';
+}
+
+/**
+ * Optional helper if you want field-level messages (e.g., zod issues).
+ * Returns array of strings you can show under inputs or in a list.
+ */
+export function extractFieldIssues(err: unknown): string[] {
+  if (!hasData(err)) return [];
+  const d = (err as { data?: unknown }).data;
+  if (!isRecord(d) || !isRecord(d.details)) return [];
+
+  const issues = d.details['issues'];
+  if (Array.isArray(issues)) {
+    return issues
+      .map((it) => (isRecord(it) ? getStr(it, 'message') : undefined))
+      .filter((m): m is string => !!m);
+  }
+  return [];
+}
+
 ```
 
 ```javascript
@@ -1623,18 +2038,72 @@ createRoot(document.getElementById('root')!).render(
 ```
 
 ```javascript
+// src/routes/guards.tsx
+import { Navigate, Outlet } from "react-router-dom";
+import { useSelector } from "react-redux";
+import type { RootState } from "@/store/store";
+
+
+export function PrivateRoute() {
+  const user = useSelector((s: RootState) => s.auth.user);
+  return user ? <Outlet /> : <Navigate to="/login" replace />;
+}
+
+export function RoleGuard({ allow }: { allow: Array<"admin" | "student" | "supervisor"> }) {
+  const role = useSelector((s: RootState) => s.auth.user?.role);
+  return role && allow.includes(role) ? <Outlet /> : <Navigate to="/" replace />;
+}
 
 ```
 
 ```javascript
-
+// src/routes/pages.tsx
+export const LoginPage = () => <div className="p-6">Login Page</div>;
+export const StudentDashboard = () => (
+  <div className="p-6">Student Dashboard</div>
+);
 ```
 
 ```javascript
+// src/routes/router.tsx
+import { Navigate, createBrowserRouter } from "react-router-dom";
+import { PrivateRoute, RoleGuard } from "@/routes/guards";
+import { LoginPage, StudentDashboard } from "@/routes/pages";
 
+export const router = createBrowserRouter([
+  { path: "/", element: <Navigate to="/student/dashboard" replace /> },
+  { path: "/login", element: <LoginPage /> },
+  {
+    element: <PrivateRoute />,
+    children: [
+      { path: "/student/dashboard", element: <StudentDashboard /> },
+      {
+        element: <RoleGuard allow={["admin"]} />,
+        children: [
+          { path: "/admin", element: <div className="p-6">Admin Home</div> },
+        ],
+      },
+    ],
+  },
+  { path: "*", element: <div className="p-6">404</div> },
+]);
 ```
 
 ```javascript
+// src/app/theme-context.ts
+import { createContext, useContext } from "react";
+
+export type Theme = "light" | "dark" | "system";
+type Ctx = { theme: Theme; setTheme: (t: Theme) => void };
+
+// undefined so we can throw if used outside provider
+export const ThemeCtx = createContext<Ctx | undefined>(undefined);
+
+export const useTheme = () => {
+  const ctx = useContext(ThemeCtx);
+  if (!ctx) throw new Error("useTheme must be used within ThemeProvider");
+  return ctx;
+};
 
 ```
 
