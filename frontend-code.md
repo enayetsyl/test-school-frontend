@@ -255,16 +255,15 @@ export default defineConfig({
 ```javascript
 // src/app/App.tsx
 import { RouterProvider } from "react-router-dom";
-
-import { ThemeProvider } from "./ThemeProvider";
-import { Toaster } from "sonner";
-import { router } from "./router";
+import { Toaster } from "@/components/ui/sonner";
+import { ThemeProvider } from "@/app/ThemeProvider"; // your custom one
+import { router } from "@/routes/router";
 
 export default function App() {
   return (
     <ThemeProvider>
       <RouterProvider router={router} />
-      <Toaster richColors position="top-right" theme="system" />
+      <Toaster richColors position="top-right" />
     </ThemeProvider>
   );
 }
@@ -1374,6 +1373,459 @@ export { Textarea }
 ```
 
 ```javascript
+// src/features/auth/route-helpers.ts
+import type { Role } from "@/types/user";
+
+export function defaultRouteForRole(role: Role): string {
+  if (role === "admin") return "/admin";
+  if (role === "supervisor") return "/supervisor";
+  return "/student/dashboard";
+}
+
+
+```
+
+```javascript
+// src/features/auth/components/authCard.tsx
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+
+export default function AuthCard({
+  title,
+  description,
+  footer,
+  children,
+}: {
+  title: string;
+  description?: string;
+  footer?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mx-auto w-full max-w-md p-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-xl">{title}</CardTitle>
+          {description ? <CardDescription>{description}</CardDescription> : null}
+        </CardHeader>
+        <CardContent className="grid gap-4">{children}</CardContent>
+        {footer ? <CardFooter className="justify-between">{footer}</CardFooter> : null}
+      </Card>
+    </div>
+  );
+}
+
+```
+
+```javascript
+// src/features/auth/pages/LoginPage.tsx
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { useLoginMutation } from "@/services/auth.api";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import AuthCard from "../components/AuthCard";
+import { toast } from "sonner";
+import { extractApiError } from "@/utils/extractApiError";
+import { useNavigate, Link } from "react-router-dom";
+import { useSelector } from "react-redux";
+import type { RootState } from "@/store/store";
+import { defaultRouteForRole } from "../route-helpers";
+
+const Schema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+});
+type FormValues = z.infer<typeof Schema>;
+
+export default function LoginPage() {
+  const navigate = useNavigate();
+  const role = useSelector((s: RootState) => s.auth.user?.role);
+
+  const [login, { isLoading }] = useLoginMutation();
+  const { register, handleSubmit, formState: { errors } } = useForm<FormValues>({
+    resolver: zodResolver(Schema),
+    defaultValues: { email: "", password: "" },
+  });
+
+  const onSubmit = async (values: FormValues) => {
+    try {
+      const res = await login(values).unwrap();
+      toast.success("Logged in");
+      const to = defaultRouteForRole(res.user.role);
+      navigate(to, { replace: true });
+    } catch (e: unknown) {
+      toast.error(extractApiError(e));
+    }
+  };
+
+  // If already logged in, push to default route
+  if (role) {
+    navigate(defaultRouteForRole(role), { replace: true });
+    return null;
+  }
+
+  return (
+    <AuthCard
+      title="Sign in"
+      description="Access your Test_School account"
+      footer={
+        <div className="w-full text-sm text-muted-foreground">
+          <span>New here?</span>{" "}
+          <Link className="underline" to="/register">Create an account</Link>
+        </div>
+      }
+    >
+      <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4">
+        <div className="grid gap-2">
+          <Label htmlFor="email">Email</Label>
+          <Input id="email" type="email" {...register("email")} aria-invalid={!!errors.email} />
+          {errors.email?.message && <p className="text-sm text-destructive">{errors.email.message}</p>}
+        </div>
+
+        <div className="grid gap-2">
+          <Label htmlFor="password">Password</Label>
+          <Input id="password" type="password" {...register("password")} aria-invalid={!!errors.password} />
+          {errors.password?.message && <p className="text-sm text-destructive">{errors.password.message}</p>}
+        </div>
+
+        <div className="flex items-center justify-between">
+          <Link className="text-sm underline" to="/forgot">Forgot password?</Link>
+        </div>
+
+        <Button type="submit" disabled={isLoading}>
+          {isLoading ? "Signing in..." : "Sign in"}
+        </Button>
+      </form>
+    </AuthCard>
+  );
+}
+
+
+```
+
+```javascript
+// src/features/auth/pages/RegisterPage.tsx
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { useRegisterMutation, useSendOtpMutation } from "@/services/auth.api";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import AuthCard from "../components/AuthCard";
+import { toast } from "sonner";
+import { extractApiError } from "@/utils/extractApiError";
+import { useNavigate, Link } from "react-router-dom";
+
+const Schema = z.object({
+  name: z.string().min(2, "Please enter your name"),
+  email: z.string().email(),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+});
+type FormValues = z.infer<typeof Schema>;
+
+export default function RegisterPage() {
+  const navigate = useNavigate();
+  const [registerUser, { isLoading }] = useRegisterMutation();
+  const [sendOtp] = useSendOtpMutation();
+
+  const { register, handleSubmit, formState: { errors } } = useForm<FormValues>({
+    resolver: zodResolver(Schema),
+    defaultValues: { name: "", email: "", password: "" },
+  });
+
+  const onSubmit = async (values: FormValues) => {
+    try {
+      await registerUser(values).unwrap();
+      await sendOtp({ email: values.email, purpose: "verify" }).unwrap();
+      toast.success("Account created. We sent you a verification code.");
+      navigate(`/verify-otp?email=${encodeURIComponent(values.email)}&purpose=verify`);
+    } catch (e: unknown) {
+      toast.error(extractApiError(e));
+    }
+  };
+
+  return (
+    <AuthCard
+      title="Create account"
+      description="Register to start your assessments"
+      footer={<span className="text-sm text-muted-foreground">Already have an account? <Link className="underline" to="/login">Sign in</Link></span>}
+    >
+      <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4">
+        <div className="grid gap-2">
+          <Label htmlFor="name">Name</Label>
+          <Input id="name" {...register("name")} aria-invalid={!!errors.name} />
+          {errors.name?.message && <p className="text-sm text-destructive">{errors.name.message}</p>}
+        </div>
+
+        <div className="grid gap-2">
+          <Label htmlFor="email">Email</Label>
+          <Input id="email" type="email" {...register("email")} aria-invalid={!!errors.email} />
+          {errors.email?.message && <p className="text-sm text-destructive">{errors.email.message}</p>}
+        </div>
+
+        <div className="grid gap-2">
+          <Label htmlFor="password">Password</Label>
+          <Input id="password" type="password" {...register("password")} aria-invalid={!!errors.password} />
+          {errors.password?.message && <p className="text-sm text-destructive">{errors.password.message}</p>}
+        </div>
+
+        <Button type="submit" disabled={isLoading}>
+          {isLoading ? "Creating..." : "Create account"}
+        </Button>
+      </form>
+    </AuthCard>
+  );
+}
+```
+
+```javascript
+// src/features/auth/pages/VerifyOtpPage.tsx
+import { useMemo, useState } from "react";
+import { useLocation, useNavigate, Link } from "react-router-dom";
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import AuthCard from "../components/AuthCard";
+import { useResendOtpMutation, useVerifyOtpMutation } from "@/services/auth.api";
+import { toast } from "sonner";
+import { extractApiError } from "@/utils/extractApiError";
+
+function useQuery() {
+  const { search } = useLocation();
+  return useMemo(() => new URLSearchParams(search), [search]);
+}
+
+export default function VerifyOtpPage() {
+  const q = useQuery();
+  const email = q.get("email") ?? "";
+  const purpose = (q.get("purpose") === "reset" ? "reset" : "verify") as "verify" | "reset";
+  const navigate = useNavigate();
+
+  const [code, setCode] = useState("");
+  const [verify, { isLoading }] = useVerifyOtpMutation();
+  const [resend, { isLoading: isResending }] = useResendOtpMutation();
+
+  const onVerify = async () => {
+    try {
+     if (purpose === "verify") {
+    await verify({ email, otp: code, purpose }).unwrap(); // consumes OTP
+    toast.success("Verified successfully");
+    navigate("/login", { replace: true });
+    return;
+  }
+
+  // purpose === "reset": DON'T verify here.
+  // Just carry the code to the reset page.
+  navigate(`/reset?email=${encodeURIComponent(email)}&otp=${code}`, { replace: true });
+    } catch (e: unknown) {
+      toast.error(extractApiError(e));
+    }
+  };
+
+  const onResend = async () => {
+    try {
+      await resend({ email, purpose }).unwrap();
+      toast.success("OTP resent");
+    } catch (e: unknown) {
+      toast.error(extractApiError(e));
+    }
+  };
+
+  return (
+    <AuthCard
+      title="Verify code"
+      description={`Enter the 6-digit code we sent to ${email}`}
+      footer={<Link className="text-sm underline" to="/login">Back to sign in</Link>}
+    >
+      <div className="grid gap-3">
+        <Label>One-time code</Label>
+        <InputOTP value={code} onChange={setCode} maxLength={6} containerClassName="justify-center">
+          <InputOTPGroup>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <InputOTPSlot key={i} index={i} />
+            ))}
+          </InputOTPGroup>
+        </InputOTP>
+
+        <Button onClick={onVerify} disabled={isLoading || code.length !== 6}>
+          {isLoading ? "Verifying..." : "Verify"}
+        </Button>
+
+        <Button type="button" variant="ghost" disabled={isResending} onClick={onResend}>
+          {isResending ? "Resending..." : "Resend code"}
+        </Button>
+      </div>
+    </AuthCard>
+  );
+}
+```
+
+```javascript
+// src/features/auth/pages/ForgotPasswordPage.tsx
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { useForgotMutation } from "@/services/auth.api";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import AuthCard from "../components/AuthCard";
+import { toast } from "sonner";
+import { extractApiError } from "@/utils/extractApiError";
+import { Link, useNavigate } from "react-router-dom";
+
+const Schema = z.object({ email: z.string().email() });
+type FormValues = z.infer<typeof Schema>;
+
+export default function ForgotPasswordPage() {
+  const navigate = useNavigate();
+  const [forgot, { isLoading }] = useForgotMutation();
+  const { register, handleSubmit, formState: { errors } } = useForm<FormValues>({
+    resolver: zodResolver(Schema),
+    defaultValues: { email: "" },
+  });
+
+  const onSubmit = async (values: FormValues) => {
+    try {
+      await forgot(values).unwrap();
+      toast.success("OTP sent to your email");
+      navigate(`/verify-otp?email=${encodeURIComponent(values.email)}&purpose=reset`);
+    } catch (e: unknown) {
+      toast.error(extractApiError(e));
+    }
+  };
+
+  return (
+    <AuthCard
+      title="Forgot password"
+      description="We’ll send a reset code to your email"
+      footer={<Link className="text-sm underline" to="/login">Back to sign in</Link>}
+    >
+      <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4">
+        <div className="grid gap-2">
+          <Label htmlFor="email">Email</Label>
+          <Input id="email" type="email" {...register("email")} aria-invalid={!!errors.email} />
+          {errors.email?.message && <p className="text-sm text-destructive">{errors.email.message}</p>}
+        </div>
+        <Button type="submit" disabled={isLoading}>
+          {isLoading ? "Sending..." : "Send code"}
+        </Button>
+      </form>
+    </AuthCard>
+  );
+}
+
+
+```
+
+```javascript
+// src/features/auth/pages/ResetPasswordPage.tsx
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { useLocation, useNavigate, Link } from "react-router-dom";
+import { useResetMutation } from "@/services/auth.api";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import AuthCard from "../components/AuthCard";
+import { toast } from "sonner";
+import { extractApiError } from "@/utils/extractApiError";
+import { useEffect } from "react";
+
+function useEmailFromQuery(): {email:string; otp: string} {
+  const search = new URLSearchParams(useLocation().search);
+  return { email: search.get("email") ?? "", otp: search.get("otp") ?? "" };
+}
+
+const Schema = z.object({
+  email: z.string().email(),
+  otp: z.string().length(6, "OTP must be 6 digits"),
+  newPassword: z.string().min(8, "Password must be at least 8 characters"),
+});
+type FormValues = z.infer<typeof Schema>;
+
+export default function ResetPasswordPage() {
+  const { email, otp } = useEmailFromQuery();
+  const navigate = useNavigate();
+  const [reset, { isLoading }] = useResetMutation();
+
+  const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormValues>({
+    resolver: zodResolver(Schema),
+    defaultValues: { email, otp, newPassword: "" },
+  });
+
+   useEffect(() => {
+    setValue("email", email, { shouldValidate: false });
+    if (otp) setValue("otp", otp, { shouldValidate: false });
+  }, [email, otp, setValue]);
+
+  // keep email field synced (read-only)
+  if (email) setValue("email", email, { shouldValidate: false });
+
+  const onSubmit = async (values: FormValues) => {
+    try {
+      await reset(values).unwrap();
+      toast.success("Password reset. Please sign in.");
+      navigate("/login", { replace: true });
+    } catch (e: unknown) {
+      toast.error(extractApiError(e));
+    }
+  };
+
+  return (
+    <AuthCard
+      title="Reset password"
+      description="Enter the OTP and your new password"
+      footer={<Link className="text-sm underline" to="/login">Back to sign in</Link>}
+    >
+      <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4">
+        <div className="grid gap-2">
+          <Label htmlFor="email">Email</Label>
+          <Input id="email" type="email" {...register("email")} readOnly />
+        </div>
+
+        <div className="grid gap-2">
+          <Label htmlFor="otp">OTP</Label>
+          <Input id="otp" inputMode="numeric" maxLength={6} {...register("otp")} aria-invalid={!!errors.otp} />
+          {errors.otp?.message && <p className="text-sm text-destructive">{errors.otp.message}</p>}
+        </div>
+
+        <div className="grid gap-2">
+          <Label htmlFor="newPassword">New password</Label>
+          <Input id="newPassword" type="password" {...register("newPassword")} aria-invalid={!!errors.newPassword} />
+          {errors.newPassword?.message && (
+            <p className="text-sm text-destructive">{errors.newPassword.message}</p>
+          )}
+        </div>
+
+        <Button type="submit" disabled={isLoading}>
+          {isLoading ? "Resetting..." : "Reset password"}
+        </Button>
+      </form>
+    </AuthCard>
+  );
+}
+
+
+```
+
+```javascript
+// src/features/auth
+```
+
+```javascript
+// src/features/auth
+```
+
+```javascript
+// src/features/auth
+```
+
+```javascript
 // src/features/auth
 ```
 
@@ -1405,49 +1857,109 @@ export function cn(...inputs: ClassValue[]) {
 ```
 
 ```javascript
-// src/services/auth.api.ts
 import { baseApi } from "./baseApi";
 import { setCredentials, clearAuth } from "@/store/auth.slice";
-import type { ApiUser } from "@/types/user";
-import { toAppUser } from "@/types/user";
+import type { RootState } from "@/store/store";
+import type { AppUser } from "@/types/user";
 
-type LoginBody = { email: string; password: string };
-type LoginResult = { user: ApiUser; accessToken: string };
-type MeResult = { user: ApiUser };
+export type RegisterBody = { name: string; email: string; password: string };
+export type RegisterResult = { user: AppUser };
+
+export type LoginBody = { email: string; password: string };
+export type LoginResult = { user: AppUser; accessToken: string };
+
+export type MeResult = { user: AppUser };
+
+export type OtpPurpose = "verify" | "reset";
+export type OtpSendBody = { email: string; purpose: OtpPurpose };
+export type OtpVerifyBody = { email: string; otp: string; purpose: OtpPurpose };
+export type OtpOk = { ok: boolean };
+
+export type ForgotBody = { email: string };
+export type ResetBody = { email: string; otp: string; newPassword: string };
 
 export const authApi = baseApi.injectEndpoints({
   endpoints: (b) => ({
+    // Login → sets credentials + invalidates /me so dependent screens auto-refresh
     login: b.mutation<LoginResult, LoginBody>({
       query: (body) => ({ url: "/auth/login", method: "POST", data: body }),
       async onQueryStarted(_, { dispatch, queryFulfilled }) {
         try {
           const { data } = await queryFulfilled;
-          dispatch(setCredentials({ user: toAppUser(data.user), accessToken: data.accessToken }));
-        } catch {
-          /* ignore */
-        }
+          dispatch(setCredentials({ user: data.user, accessToken: data.accessToken }));
+        } catch { /* handled in UI */ }
+      },
+      invalidatesTags: ["Me"],
+    }),
+
+    // Register → backend returns { user } (no token)
+    register: b.mutation<RegisterResult, RegisterBody>({
+      query: (body) => ({ url: "/auth/register", method: "POST", data: body }),
+      invalidatesTags: ["Me"],
+    }),
+
+    // Optional: manual refresh if you need it in a UI action
+    refresh: b.mutation<{ accessToken: string }, void>({
+      query: () => ({ url: "/auth/token/refresh", method: "POST" }),
+      async onQueryStarted(_, { dispatch, queryFulfilled, getState }) {
+        try {
+          const { data } = await queryFulfilled;
+          const prev = (getState() as RootState).auth;
+          if (prev?.user) dispatch(setCredentials({ user: prev.user, accessToken: data.accessToken }));
+        } catch { /* interceptor/route guards will handle */ }
       },
     }),
 
+    // OTP
+    sendOtp: b.mutation<OtpOk, OtpSendBody>({
+      query: (body) => ({ url: "/auth/otp/send", method: "POST", data: body }),
+    }),
+    verifyOtp: b.mutation<OtpOk, OtpVerifyBody>({
+      query: (body) => ({ url: "/auth/otp/verify", method: "POST", data: body }),
+      invalidatesTags: ["Me"],
+    }),
+    resendOtp: b.mutation<OtpOk, OtpSendBody>({
+      query: (body) => ({ url: "/auth/otp/resend", method: "POST", data: body }),
+    }),
+
+    // Forgot/Reset
+    forgot: b.mutation<OtpOk, ForgotBody>({
+      query: (body) => ({ url: "/auth/forgot", method: "POST", data: body }),
+    }),
+    reset: b.mutation<OtpOk, ResetBody>({
+      query: (body) => ({ url: "/auth/reset", method: "POST", data: body }),
+    }),
+
+    // Me / Logout
     me: b.query<MeResult, void>({
       query: () => ({ url: "/users/me" }),
       providesTags: ["Me"],
+      // NOTE: This assumes baseApi unwraps to the payload under `data`.
+      // If your baseApi returns the full envelope, add: transformResponse: (r: any) => r.data
     }),
 
     logout: b.mutation<void, void>({
       query: () => ({ url: "/auth/logout", method: "POST" }),
       async onQueryStarted(_, { dispatch, queryFulfilled }) {
-        try {
-          await queryFulfilled;
-        } finally {
-          dispatch(clearAuth());
-        }
+        try { await queryFulfilled; } finally { dispatch(clearAuth()); }
       },
+      invalidatesTags: ["Me"],
     }),
   }),
 });
 
-export const { useLoginMutation, useMeQuery, useLogoutMutation } = authApi;
+export const {
+  useLoginMutation,
+  useRegisterMutation,
+  useRefreshMutation,   // optional
+  useSendOtpMutation,
+  useVerifyOtpMutation,
+  useResendOtpMutation,
+  useForgotMutation,
+  useResetMutation,
+  useMeQuery,
+  useLogoutMutation,
+} = authApi;
 
 ```
 
@@ -1524,6 +2036,7 @@ export const baseApi = createApi({
 // src/store/auth.slice.ts
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { AppUser } from "@/types/user";
+import { setAccessToken } from "@/utils/authToken";
 
 type AuthState = {
   user: AppUser | null;
@@ -1536,13 +2049,18 @@ const authSlice = createSlice({
   name: "auth",
   initialState,
   reducers: {
-    setCredentials: (state, action: PayloadAction<{ user: AppUser; accessToken: string }>) => {
+    setCredentials: (
+      state,
+      action: PayloadAction<{ user: AppUser; accessToken: string }>,
+    ) => {
       state.user = action.payload.user;
       state.accessToken = action.payload.accessToken;
+      setAccessToken(action.payload.accessToken);
     },
     clearAuth: (state) => {
       state.user = null;
       state.accessToken = null;
+      setAccessToken(null);
     },
   },
 });
@@ -1559,37 +2077,62 @@ export default authSlice.reducer;
 ```javascript
 // src/store/persistConfig.ts
 import storage from "redux-persist/lib/storage";
-export const persistConfig = {
-  key: "root",
-  version: 1,
-  storage,
-  whitelist: ["auth"],
-};
+import type { PersistConfig } from "redux-persist";
+
+export function makePersistConfig<S>(): PersistConfig<S> {
+  return {
+    key: "root",
+    version: 1,
+    storage,
+    whitelist: [] as Array<Extract<keyof S, string>>, // fill at call site if needed
+  };
+}
+
 ```
 
 ```javascript
 // src/store/store.ts
 import { configureStore, combineReducers } from "@reduxjs/toolkit";
-import { persistReducer, persistStore } from "redux-persist";
+import { persistReducer, persistStore, type PersistConfig } from "redux-persist";
+import storage from "redux-persist/lib/storage";
 import auth from "./auth.slice";
 import ui from "./ui.slice";
 import { baseApi } from "@/services/baseApi";
-import { persistConfig } from "./presistConfig";
 
-
+// 1) Build root reducer
 const rootReducer = combineReducers({
   auth,
   ui,
   [baseApi.reducerPath]: baseApi.reducer,
 });
-const persisted = persistReducer(persistConfig, rootReducer);
 
+// 2) Derive the exact state type from rootReducer (this is the missing type)
+type RootReducerState = ReturnType<typeof rootReducer>;
+
+// 3) Strongly-typed persist config (persist only feature slices)
+const persistConfig: PersistConfig<RootReducerState> = {
+  key: "root",
+  version: 1,
+  storage,
+  whitelist: ["auth", "ui"] as Array<Extract<keyof RootReducerState, string>>,
+};
+
+// 4) Wrap reducer with persistence
+const persistedReducer = persistReducer(persistConfig, rootReducer);
+
+// 5) Store + middleware
 export const store = configureStore({
-  reducer: persisted,
-  middleware: (gDM) => gDM({ serializableCheck: false }).concat(baseApi.middleware),
+  reducer: persistedReducer,
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware({
+      serializableCheck: false,
+      immutableCheck: false,
+    }).concat(baseApi.middleware),
 });
+
 export const persistor = persistStore(store);
 
+// App-level types
 export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch;
 
@@ -1660,96 +2203,46 @@ export function toAppUser(u: ApiUser): AppUser {
 
 ```javascript
 // src/utils/axios.ts
-import axios, {
-  AxiosError,
-  type InternalAxiosRequestConfig,
-} from "axios";
-import { store } from "@/store/store";
-import { setCredentials, clearAuth } from "@/store/auth.slice";
-import type { AppUser } from "@/types/user";
+import axios, { type AxiosInstance, AxiosHeaders, type InternalAxiosRequestConfig } from "axios";
+import { getAccessToken } from "./authToken";
 
-// Add a typed custom flag to axios config (no `as any`)
-declare module "axios" {
-  interface AxiosRequestConfig {
-    _retry?: boolean;
-  }
-  interface InternalAxiosRequestConfig {
-    _retry?: boolean;
-  }
-}
+const BASE_URL = import.meta.env.VITE_API_URL?.toString() ?? "http://localhost:8080/api/v1";
 
-export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL as string,
-  withCredentials: true,
-});
+export const api: AxiosInstance = axios.create({ baseURL: BASE_URL, withCredentials: true });
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = store.getState().auth.accessToken;
+  if (!config.headers) config.headers = new AxiosHeaders();
+  else if (!(config.headers instanceof AxiosHeaders)) config.headers = AxiosHeaders.from(config.headers);
+  const token = getAccessToken();
   if (token) config.headers.set("Authorization", `Bearer ${token}`);
   return config;
 });
 
-let refreshing = false;
-let waiters: Array<() => void> = [];
 
-type RefreshPayload = { accessToken: string };
-type RefreshResponse = { success: boolean; data: RefreshPayload };
-type MeResponse = { success: boolean; data: { user: AppUser } };
+```
 
-api.interceptors.response.use(
-  (r) => r,
-  async (error: AxiosError) => {
-    const { response } = error;
-    const original = error.config;
-    if (!response || response.status !== 401 || original?._retry) {
-      return Promise.reject(error);
-    }
+```javascript
+// src/utils/authToken.ts
+let inMemoryToken: string | null = null;
 
-    if (refreshing) {
-      await new Promise<void>((res) => waiters.push(res));
-    } else {
-      refreshing = true;
-      try {
-        const resp = await api.post<RefreshResponse>("/auth/token/refresh");
-        const accessToken = resp.data?.data?.accessToken;
-
-        if (accessToken) {
-          const prev = store.getState().auth;
-
-          if (prev.user) {
-            // We already have a user; just update the token
-            store.dispatch(setCredentials({ user: prev.user, accessToken }));
-          } else {
-            // No user in store—fetch it with the fresh token (pass header explicitly)
-            try {
-              const meResp = await api.get<MeResponse>("/users/me", {
-                headers: { Authorization: `Bearer ${accessToken}` },
-              });
-              store.dispatch(
-                setCredentials({ user: meResp.data.data.user, accessToken })
-              );
-            } catch {
-              store.dispatch(clearAuth());
-            }
-          }
-        } else {
-          store.dispatch(clearAuth());
-        }
-      } catch {
-        store.dispatch(clearAuth());
-      } finally {
-        refreshing = false;
-        waiters.forEach((w) => w());
-        waiters = [];
-      }
-    }
-
-    // retry the original request once
-     if (!original) return Promise.reject(error); // <- narrow
-    original._retry = true;
-    return api.request(original);
+export function setAccessToken(token: string | null): void {
+  inMemoryToken = token;
+  try {
+    if (token) localStorage.setItem("accessToken", token);
+    else localStorage.removeItem("accessToken");
+  } catch {
+    // localStorage may be disabled — ignore
   }
-);
+}
+
+export function getAccessToken(): string | null {
+  if (inMemoryToken) return inMemoryToken;
+  try {
+    return localStorage.getItem("accessToken");
+  } catch {
+    return null;
+  }
+}
 
 ```
 
@@ -2019,16 +2512,24 @@ body { background: var(--background); color: var(--foreground); }
 
 ```javascript
 // src/main.tsx
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './app/App.tsx'
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { Provider } from "react-redux";
+import { PersistGate } from "redux-persist/integration/react";
+import { store, persistor } from "@/store/store";
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+import "./index.css";
+import App from "./app/App";
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <Provider store={store}>
+      <PersistGate loading={null} persistor={persistor}>
+        <App />
+      </PersistGate>
+    </Provider>
+  </React.StrictMode>
+);
 
 ```
 
@@ -2068,11 +2569,23 @@ export const StudentDashboard = () => (
 // src/routes/router.tsx
 import { Navigate, createBrowserRouter } from "react-router-dom";
 import { PrivateRoute, RoleGuard } from "@/routes/guards";
-import { LoginPage, StudentDashboard } from "@/routes/pages";
+import LoginPage from "@/features/auth/pages/LoginPage";
+import RegisterPage from "@/features/auth/pages/RegisterPage";
+import VerifyOtpPage from "@/features/auth/pages/VerifyOtpPage";
+import ForgotPasswordPage from "@/features/auth/pages/ForgotPasswordPage";
+import ResetPasswordPage from "@/features/auth/pages/ResetPasswordPage";
+import { StudentDashboard } from "@/routes/pages";
 
 export const router = createBrowserRouter([
   { path: "/", element: <Navigate to="/student/dashboard" replace /> },
+
+  // Auth
   { path: "/login", element: <LoginPage /> },
+  { path: "/register", element: <RegisterPage /> },
+  { path: "/verify-otp", element: <VerifyOtpPage /> }, // ?email=...&purpose=verify|reset
+  { path: "/forgot", element: <ForgotPasswordPage /> },
+  { path: "/reset", element: <ResetPasswordPage /> }, // ?email=...
+
   {
     element: <PrivateRoute />,
     children: [

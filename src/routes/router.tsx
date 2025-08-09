@@ -1,11 +1,23 @@
 // src/routes/router.tsx
 import { Navigate, createBrowserRouter } from "react-router-dom";
 import { PrivateRoute, RoleGuard } from "@/routes/guards";
-import { LoginPage, StudentDashboard } from "@/routes/pages";
+import LoginPage from "@/features/auth/pages/LoginPage";
+import RegisterPage from "@/features/auth/pages/RegisterPage";
+import VerifyOtpPage from "@/features/auth/pages/VerifyOtpPage";
+import ForgotPasswordPage from "@/features/auth/pages/ForgotPasswordPage";
+import ResetPasswordPage from "@/features/auth/pages/ResetPasswordPage";
+import { StudentDashboard } from "@/routes/pages";
 
 export const router = createBrowserRouter([
   { path: "/", element: <Navigate to="/student/dashboard" replace /> },
+
+  // Auth
   { path: "/login", element: <LoginPage /> },
+  { path: "/register", element: <RegisterPage /> },
+  { path: "/verify-otp", element: <VerifyOtpPage /> }, // ?email=...&purpose=verify|reset
+  { path: "/forgot", element: <ForgotPasswordPage /> },
+  { path: "/reset", element: <ResetPasswordPage /> }, // ?email=...
+
   {
     element: <PrivateRoute />,
     children: [

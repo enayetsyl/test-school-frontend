@@ -1,6 +1,7 @@
 // src/store/auth.slice.ts
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { AppUser } from "@/types/user";
+import { setAccessToken } from "@/utils/authToken";
 
 type AuthState = {
   user: AppUser | null;
@@ -19,10 +20,12 @@ const authSlice = createSlice({
     ) => {
       state.user = action.payload.user;
       state.accessToken = action.payload.accessToken;
+      setAccessToken(action.payload.accessToken);
     },
     clearAuth: (state) => {
       state.user = null;
       state.accessToken = null;
+      setAccessToken(null);
     },
   },
 });
