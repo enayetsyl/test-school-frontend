@@ -1,0 +1,163 @@
+@import "tailwindcss";
+
+/* =========================
+   Test_School – Theme (Tailwind v4)
+   - Define brand scale in OKLCH
+   - Semantic tokens for shadcn/ui
+   - Light & Dark with WCAG-friendly contrast
+   ========================= */
+@theme {
+  /* ----- Brand (Indigo/Blue) ----- */
+  /* Chosen for trust/clarity; OKLCH keeps steps perceptually even */
+  --color-brand-50: oklch(0.97 0.02 265);
+  --color-brand-100: oklch(0.93 0.03 265);
+  --color-brand-200: oklch(0.88 0.05 265);
+  --color-brand-300: oklch(0.81 0.08 265);
+  --color-brand-400: oklch(0.74 0.11 265);
+  --color-brand-500: oklch(0.66 0.14 265); /* primary base (light) */
+  --color-brand-600: oklch(0.6 0.15 265);
+  --color-brand-700: oklch(0.53 0.14 265);
+  --color-brand-800: oklch(0.47 0.12 265);
+  --color-brand-900: oklch(0.41 0.1 265);
+
+  /* ----- Success / Warning / Destructive / Info (OKLCH) ----- */
+  --color-success: oklch(0.7 0.11 150); /* green */
+  --color-success-fg: oklch(0.16 0 0);
+  --color-warning: oklch(0.86 0.12 80); /* amber */
+  --color-warning-fg: oklch(0.19 0 0);
+  --color-destructive: oklch(0.62 0.2 25); /* red */
+  --color-destructive-fg: oklch(0.98 0 0);
+  --color-info: oklch(0.73 0.12 240); /* cyan/blue */
+  --color-info-fg: oklch(0.16 0 0);
+
+  /* ----- Neutrals (Surfaces & Text) ----- */
+  --color-background: oklch(0.99 0 0);
+  --color-foreground: oklch(0.15 0 0); /* ~#0a0a0a */
+
+  --color-card: var(--color-background);
+  --color-card-foreground: var(--color-foreground);
+
+  --color-popover: var(--color-card);
+  --color-popover-foreground: var(--color-card-foreground);
+
+  --color-muted: oklch(0.95 0.01 255); /* light gray (borders/bg) */
+  --color-muted-foreground: oklch(0.47 0 0); /* secondary text */
+
+  --color-accent: oklch(0.96 0.02 265);
+  --color-accent-foreground: var(--color-foreground);
+
+  --color-primary: var(--color-brand-600);
+  --color-primary-foreground: oklch(0.98 0 0);
+
+  --color-secondary: oklch(0.92 0.01 255);
+  --color-secondary-foreground: oklch(0.22 0 0);
+
+  --color-border: oklch(0.9 0.01 255);
+  --color-input: var(--color-border);
+  --color-ring: var(--color-brand-600);
+}
+
+/* Bridge to shadcn/ui variables */
+:root {
+  --background: var(--color-background);
+  --foreground: var(--color-foreground);
+
+  --card: var(--color-card);
+  --card-foreground: var(--color-card-foreground);
+
+  --popover: var(--color-popover);
+  --popover-foreground: var(--color-popover-foreground);
+
+  --primary: var(--color-primary);
+  --primary-foreground: var(--color-primary-foreground);
+
+  --secondary: var(--color-secondary);
+  --secondary-foreground: var(--color-secondary-foreground);
+
+  --muted: var(--color-muted);
+  --muted-foreground: var(--color-muted-foreground);
+
+  --accent: var(--color-accent);
+  --accent-foreground: var(--color-accent-foreground);
+
+  --destructive: var(--color-destructive);
+  --destructive-foreground: var(--color-destructive-fg);
+
+  --success: var(--color-success);
+  --success-foreground: var(--color-success-fg);
+
+  --warning: var(--color-warning);
+  --warning-foreground: var(--color-warning-fg);
+
+  --info: var(--color-info);
+  --info-foreground: var(--color-info-fg);
+
+  --border: var(--color-border);
+  --input: var(--color-input);
+  --ring: var(--color-ring);
+}
+
+/* Dark theme – tuned for AA contrast on text & UI */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background: oklch(0.14 0 0);
+    --color-foreground: oklch(0.93 0 0);
+
+    --color-card: oklch(0.17 0 0);
+    --color-card-foreground: var(--color-foreground);
+
+    --color-popover: var(--color-card);
+    --color-popover-foreground: var(--color-card-foreground);
+
+    --color-muted: oklch(0.24 0 0);
+    --color-muted-foreground: oklch(0.73 0 0);
+
+    /* Slightly brighter primary for dark to maintain contrast */
+    --color-primary: oklch(0.74 0.11 265); /* ~brand-400 */
+    --color-primary-foreground: oklch(0.15 0 0);
+
+    --color-secondary: oklch(0.22 0 0);
+    --color-secondary-foreground: oklch(0.9 0 0);
+
+    --color-destructive: oklch(0.7 0.18 25);
+    --color-destructive-foreground: oklch(0.12 0 0);
+
+    --color-border: oklch(0.28 0 0);
+    --color-input: var(--color-border);
+    --color-ring: var(--color-primary);
+  }
+}
+
+/* Optional: class-based dark support */
+.dark {
+  --color-background: oklch(0.14 0 0);
+  --color-foreground: oklch(0.93 0 0);
+
+  --color-card: oklch(0.17 0 0);
+  --color-card-foreground: var(--color-foreground);
+
+  --color-popover: var(--color-card);
+  --color-popover-foreground: var(--color-card-foreground);
+
+  --color-muted: oklch(0.24 0 0);
+  --color-muted-foreground: oklch(0.73 0 0);
+
+  --color-primary: oklch(0.74 0.11 265);
+  --color-primary-foreground: oklch(0.15 0 0);
+
+  --color-secondary: oklch(0.22 0 0);
+  --color-secondary-foreground: oklch(0.9 0 0);
+
+  --color-destructive: oklch(0.7 0.18 25);
+  --color-destructive-foreground: oklch(0.12 0 0);
+
+  --color-border: oklch(0.28 0 0);
+  --color-input: var(--color-border);
+  --color-ring: var(--color-primary);
+}
+
+/* Global body colors (optional) */
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
