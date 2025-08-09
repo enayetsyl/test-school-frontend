@@ -311,6 +311,45 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 ```
 
 ```javascript
+// src/components/common/Logo.tsx
+import { NavLink } from "react-router-dom";
+
+type Props = {
+  className?: string;
+  to?: string;
+  withText?: boolean;
+  imgClassName?: string;
+};
+
+export default function Logo({
+  className = "",
+  to = "/",
+  withText = true,
+  imgClassName = "h-8 w-8",
+}: Props) {
+  return (
+    <NavLink to={to} className={`inline-flex items-center gap-2 ${className}`} aria-label="Go home">
+      <img
+        src="/logo.png"
+        alt="Test_School logo"
+        className={`${imgClassName} rounded-md`}
+        loading="eager"
+        decoding="async"
+        draggable={false}
+      />
+      {withText && (
+        <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-brand-900 to-brand-600 bg-clip-text text-transparent">
+          Test_School
+        </span>
+      )}
+    </NavLink>
+  );
+}
+
+
+```
+
+```javascript
 // src/components/forms
 ```
 
@@ -356,7 +395,7 @@ export default function AppNavbar() {
   return (
     <header className="border-b bg-card">
       <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
-       <Logo className="shrink-0" withText={false} />
+    <Logo className="shrink-0" withText={false} />
         {/* <div className="font-semibold">Test_School</div> */}
 
         <nav className="flex-1">
@@ -421,7 +460,7 @@ export default function AuthHeader() {
   return (
     <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
       <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4">
-        <Logo className="shrink-0" withText={false} />
+        <Logo className="shrink-0" withText={true} />
       </div>
     </header>
   );
@@ -1520,7 +1559,14 @@ export function defaultRouteForRole(role: Role): string {
 
 ```javascript
 // src/features/auth/components/authCard.tsx
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 export default function AuthCard({
   title,
@@ -1535,13 +1581,17 @@ export default function AuthCard({
 }) {
   return (
     <div className="mx-auto w-full max-w-md p-6">
-      <Card>
+      <Card className="bg-accent border-border">
         <CardHeader>
           <CardTitle className="text-xl">{title}</CardTitle>
-          {description ? <CardDescription>{description}</CardDescription> : null}
+          {description ? (
+            <CardDescription>{description}</CardDescription>
+          ) : null}
         </CardHeader>
         <CardContent className="grid gap-4">{children}</CardContent>
-        {footer ? <CardFooter className="justify-between">{footer}</CardFooter> : null}
+        {footer ? (
+          <CardFooter className="justify-between">{footer}</CardFooter>
+        ) : null}
       </Card>
     </div>
   );
@@ -1990,6 +2040,115 @@ export function cn(...inputs: ClassValue[]) {
 ```
 
 ```javascript
+// src/services/admin.api.ts
+import { baseApi } from "./baseApi";
+import type { PageMeta } from "@/types/api";
+import { normalizeList } from "@/types/api";
+
+export type AdminSession = {
+  id: string;
+  user: { id: string; name: string };
+  status: "pending" | "active" | "submitted" | "cancelled";
+  step: 1 | 2 | 3;
+  videoRecordingMeta?: { chunks?: number };
+};
+
+export type AuditLog = {
+  id: string;
+  actor: string;
+  action: string;
+  resource: string;
+  message: string;
+  createdAt: string;
+};
+
+export type SystemConfig = {
+  timePerQuestionSec: number;
+  retakeLockMinutes: number;
+  maxRetakes: number;
+  sebMode: "enforce" | "warn" | "off";
+};
+
+export const adminApi = baseApi.injectEndpoints({
+  endpoints: (b) => ({
+    listSessions: b.query<
+      { items: AdminSession[]; meta?: PageMeta },
+      | {
+          page?: number;
+          limit?: number;
+          q?: string;
+          status?: "pending" | "active" | "submitted" | "cancelled";
+          step?: 1 | 2 | 3;
+          userId?: string;
+          from?: string;
+          to?: string;
+        }
+      | void
+    >({
+      query: (params) => ({ url: "/admin/sessions", params }),
+      transformResponse: (raw: unknown) => normalizeList<AdminSession>(raw),
+      providesTags: ["Sessions"],
+    }),
+
+    getSession: b.query<{ session: AdminSession }, string>({
+      query: (id) => ({ url: `/admin/sessions/${id}` }),
+      transformResponse: (raw: unknown) => {
+        if (raw && typeof raw === "object") {
+          const o = raw as Record<string, unknown>;
+          const session =
+            (o.data as AdminSession | undefined) ??
+            (o.session as AdminSession | undefined) ??
+            (raw as AdminSession);
+          return { session };
+        }
+        return { session: raw as AdminSession };
+      },
+      providesTags: (_r, _e, id) => [{ type: "Sessions", id }],
+    }),
+
+    listAuditLogs: b.query<
+      { items: AuditLog[]; meta?: PageMeta },
+      | {
+          page?: number;
+          limit?: number;
+          actorId?: string;
+          action?: string;
+          resource?: string;
+          from?: string;
+          to?: string;
+          q?: string;
+        }
+      | void
+    >({
+      query: (params) => ({ url: "/admin/audit-logs", params }),
+      transformResponse: (raw: unknown) => normalizeList<AuditLog>(raw),
+    }),
+
+    getConfig: b.query<SystemConfig, void>({
+      query: () => ({ url: "/admin/config" }),
+      providesTags: ["Config"],
+    }),
+
+    updateConfig: b.mutation<SystemConfig, Partial<SystemConfig>>({
+      query: (patch) => ({ url: "/admin/config", method: "PATCH", data: patch }),
+      invalidatesTags: ["Config"],
+    }),
+  }),
+});
+
+export const {
+  useListSessionsQuery,
+  useGetSessionQuery,
+  useListAuditLogsQuery,
+  useGetConfigQuery,
+  useUpdateConfigMutation,
+} = adminApi;
+
+
+```
+
+```javascript
+// src/services/auth.api.ts
 import { baseApi } from "./baseApi";
 import { setCredentials, clearAuth } from "@/store/auth.slice";
 import type { RootState } from "@/store/store";
@@ -2147,22 +2306,427 @@ export const baseApi = createApi({
 
 ```javascript
 // src/services/cert.api.ts
+import { baseApi } from "./baseApi";
+import type { QueryError } from "@/types/api";
+import { toQueryError } from "@/types/api";
+import { api } from "@/utils/axios";
+
+export type ICertification = {
+  _id: string;
+  userId: string;
+  highestLevel: "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
+  issuedAt: string;
+  certificateId: string;
+  pdfUrl?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const certApi = baseApi.injectEndpoints({
+  endpoints: (b) => ({
+    myCertification: b.query<{ certification: ICertification | null }, void>({
+      query: () => ({ url: "/certifications/me" }),
+      transformResponse: (raw: unknown) => {
+        if (raw && typeof raw === "object") {
+          const o = raw as Record<string, unknown>;
+          const certification =
+            (o.data as ICertification | null | undefined) ??
+            (o.certification as ICertification | null | undefined) ??
+            (raw as ICertification | null);
+          return { certification };
+        }
+        return { certification: raw as ICertification | null };
+      },
+      providesTags: ["Certs"],
+    }),
+
+    verifyCertification: b.query<
+      { valid: boolean; holderName?: string; level?: string; issuedAt?: string },
+      string
+    >({
+      query: (certificateId) => ({ url: `/certifications/verify/${certificateId}` }),
+    }),
+
+    getCertificationPdf: b.query<Blob, string>({
+      async queryFn(id): Promise<{ data: Blob } | { error: QueryError }> {
+        try {
+          const res = await api.get(`/certifications/${id}/pdf`, {
+            responseType: "blob",
+          });
+          return { data: res.data as Blob };
+        } catch (e: unknown) {
+          return { error: toQueryError(e) };
+        }
+      },
+      providesTags: ["Certs"],
+    }),
+  }),
+});
+
+export const {
+  useMyCertificationQuery,
+  useVerifyCertificationQuery,
+  useGetCertificationPdfQuery,
+} = certApi;
+
 ```
 
 ```javascript
 // src/services/competency.api.ts
+import { baseApi } from "./baseApi";
+import type { PageMeta } from "@/types/api";
+import { normalizeList } from "@/types/api";
+
+export type ICompetency = {
+  _id: string;
+  code: string;
+  name: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const competencyApi = baseApi.injectEndpoints({
+  endpoints: (b) => ({
+    listCompetencies: b.query<
+      { items: ICompetency[]; meta?: PageMeta },
+      | {
+          page?: number;
+          limit?: number;
+          q?: string;
+          sortBy?: "name" | "code" | "createdAt";
+          sortOrder?: "asc" | "desc";
+        }
+      | void
+    >({
+      query: (params) => ({ url: "/competencies", params }),
+      transformResponse: (raw: unknown) => normalizeList<ICompetency>(raw),
+      providesTags: ["Competencies"],
+    }),
+
+    getCompetency: b.query<{ competency: ICompetency }, string>({
+      query: (id) => ({ url: `/competencies/${id}` }),
+      transformResponse: (raw: unknown) => {
+        // Accept { data }, { competency }, or the object itself
+        if (raw && typeof raw === "object") {
+          const o = raw as Record<string, unknown>;
+          const competency =
+            (o.data as ICompetency | undefined) ??
+            (o.competency as ICompetency | undefined) ??
+            (raw as ICompetency);
+          return { competency };
+        }
+        return { competency: raw as ICompetency };
+      },
+      providesTags: (_r, _e, id) => [{ type: "Competencies", id }],
+    }),
+
+    createCompetency: b.mutation<
+      { competency: ICompetency },
+      { code: string; name: string; description?: string }
+    >({
+      query: (body) => ({ url: "/competencies", method: "POST", data: body }),
+      invalidatesTags: ["Competencies"],
+    }),
+
+    updateCompetency: b.mutation<
+      { competency: ICompetency },
+      { id: string; patch: Partial<Pick<ICompetency, "code" | "name" | "description">> }
+    >({
+      query: ({ id, patch }) => ({
+        url: `/competencies/${id}`,
+        method: "PATCH",
+        data: patch,
+      }),
+      invalidatesTags: ["Competencies"],
+    }),
+
+    deleteCompetency: b.mutation<{ deleted: true }, string>({
+      query: (id) => ({ url: `/competencies/${id}`, method: "DELETE" }),
+      invalidatesTags: ["Competencies"],
+    }),
+  }),
+});
+
+export const {
+  useListCompetenciesQuery,
+  useGetCompetencyQuery,
+  useCreateCompetencyMutation,
+  useUpdateCompetencyMutation,
+  useDeleteCompetencyMutation,
+} = competencyApi;
+
 ```
 
 ```javascript
 // src/services/exam.api.ts
+import { baseApi } from "./baseApi";
+
+export type StartExamBody = { step: 1 | 2 | 3; screen?: { width: number; height: number } };
+export type StartExamResult = { sessionId: string; deadlineAt: string; totalQuestions: number };
+
+export type AnswerBody = { sessionId: string; questionId: string; selectedIndex: number; elapsedMs: number };
+export type SubmitBody = { sessionId: string };
+export type StatusResult = {
+  session: {
+    id: string;
+    step: 1 | 2 | 3;
+    deadlineAt: string;
+    answered: number;
+    totalQuestions: number;
+    scorePct: number | null;
+    status: "pending" | "active" | "submitted" | "cancelled";
+  };
+};
+
+export const examApi = baseApi.injectEndpoints({
+  endpoints: (b) => ({
+    startExam: b.mutation<StartExamResult, StartExamBody>({
+      query: ({ step, screen }) => ({
+        url: `/exam/start`,
+        method: "POST",
+        params: { step },
+        data: screen ? { screen } : undefined,
+      }),
+    }),
+    answer: b.mutation<{ ok: true }, AnswerBody>({
+      query: (body) => ({ url: "/exam/answer", method: "POST", data: body }),
+    }),
+    submit: b.mutation<
+      { status: "submitted"; scorePct: number; awardedLevel: string; proceedNext: boolean },
+      SubmitBody
+    >({
+      query: (body) => ({ url: "/exam/submit", method: "POST", data: body }),
+    }),
+    status: b.query<StatusResult, string>({
+      query: (sessionId) => ({ url: `/exam/status/${sessionId}` }),
+    }),
+    violation: b.mutation<{ recorded: true }, { sessionId: string; type: string; meta?: Record<string, unknown> }>({
+      query: (body) => ({ url: "/exam/violation", method: "POST", data: body }),
+    }),
+
+    /** Video chunk upload (multipart) — ?sessionId=...&index=N, field key: 'chunk' */
+    uploadVideoChunk: b.mutation<{ stored: true; chunks: number }, { sessionId: string; index: number; blob: Blob }>({
+      query: ({ sessionId, index, blob }) => {
+        const fd = new FormData();
+        fd.append("chunk", blob);
+        return {
+          url: `/exam/video/upload-chunk`,
+          method: "POST",
+          params: { sessionId, index },
+          data: fd,
+        };
+      },
+    }),
+  }),
+});
+
+export const {
+  useStartExamMutation,
+  useAnswerMutation,
+  useSubmitMutation,
+  useStatusQuery,
+  useViolationMutation,
+  useUploadVideoChunkMutation,
+} = examApi;
+
 ```
 
 ```javascript
 // src/services/question.api.ts
+import { baseApi } from "./baseApi";
+import type { PageMeta, QueryError } from "@/types/api";
+import { normalizeList, toQueryError } from "@/types/api";
+import { api } from "@/utils/axios";
+
+export type QuestionLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
+
+export type IQuestion = {
+  _id: string;
+  competencyId: string;
+  level: QuestionLevel;
+  prompt: string;
+  options: string[];
+  correctIndex: number;
+  isActive: boolean;
+  meta?: { difficulty?: "easy" | "medium" | "hard"; tags?: string[] };
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const questionApi = baseApi.injectEndpoints({
+  endpoints: (b) => ({
+    listQuestions: b.query<
+      { items: IQuestion[]; meta?: PageMeta },
+      | {
+          page?: number;
+          limit?: number;
+          q?: string;
+          level?: QuestionLevel;
+          competencyId?: string;
+          isActive?: boolean;
+          sortBy?: "createdAt" | "level" | "prompt";
+          sortOrder?: "asc" | "desc";
+        }
+      | void
+    >({
+      query: (params) => ({ url: "/questions", params }),
+      transformResponse: (raw: unknown) => normalizeList<IQuestion>(raw),
+      providesTags: ["Questions"],
+    }),
+
+    getQuestion: b.query<{ question: IQuestion }, string>({
+      query: (id) => ({ url: `/questions/${id}` }),
+      transformResponse: (raw: unknown) => {
+        if (raw && typeof raw === "object") {
+          const o = raw as Record<string, unknown>;
+          const question =
+            (o.data as IQuestion | undefined) ??
+            (o.question as IQuestion | undefined) ??
+            (raw as IQuestion);
+          return { question };
+        }
+        return { question: raw as IQuestion };
+      },
+      providesTags: (_r, _e, id) => [{ type: "Questions", id }],
+    }),
+
+    createQuestion: b.mutation<
+      { question: Pick<IQuestion, "_id"> },
+      Omit<IQuestion, "_id" | "createdAt" | "updatedAt">
+    >({
+      query: (body) => ({ url: "/questions", method: "POST", data: body }),
+      invalidatesTags: ["Questions"],
+    }),
+
+    updateQuestion: b.mutation<
+      { question: IQuestion },
+      { id: string; patch: Partial<IQuestion> }
+    >({
+      query: ({ id, patch }) => ({
+        url: `/questions/${id}`,
+        method: "PATCH",
+        data: patch,
+      }),
+      invalidatesTags: ["Questions"],
+    }),
+
+    deleteQuestion: b.mutation<{ deleted: true }, string>({
+      query: (id) => ({ url: `/questions/${id}`, method: "DELETE" }),
+      invalidatesTags: ["Questions"],
+    }),
+
+    importQuestions: b.mutation<{ imported: number }, { file: File; mode?: "upsert" | "insert" }>({
+      query: ({ file, mode = "upsert" }) => {
+        const form = new FormData();
+        form.append("file", file);
+        return { url: `/questions/import`, method: "POST", params: { mode }, data: form };
+      },
+      invalidatesTags: ["Questions"],
+    }),
+
+    exportQuestions: b.query<Blob, void>({
+      async queryFn(): Promise<{ data: Blob } | { error: QueryError }> {
+        try {
+          const res = await api.get(`/questions/export`, { responseType: "blob" });
+          return { data: res.data as Blob };
+        } catch (e: unknown) {
+          return { error: toQueryError(e) };
+        }
+      },
+      providesTags: ["Questions"],
+    }),
+  }),
+});
+
+export const {
+  useListQuestionsQuery,
+  useGetQuestionQuery,
+  useCreateQuestionMutation,
+  useUpdateQuestionMutation,
+  useDeleteQuestionMutation,
+  useImportQuestionsMutation,
+  useExportQuestionsQuery,
+} = questionApi;
+
 ```
 
 ```javascript
 // src/services/user.api.ts
+import { baseApi } from "./baseApi";
+import type { PageMeta } from "@/types/api";
+import { normalizeList } from "@/types/api";
+
+export type Role = "admin" | "student" | "supervisor";
+export type UserStatus = "active" | "inactive";
+
+export type PublicUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  status?: UserStatus;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export const userApi = baseApi.injectEndpoints({
+  endpoints: (b) => ({
+    adminListUsers: b.query<
+      { items: PublicUser[]; meta?: PageMeta },
+      | { page?: number; limit?: number; q?: string; role?: Role; status?: UserStatus }
+      | void
+    >({
+      query: (params) => ({ url: "/admin/users", params }),
+      transformResponse: (raw: unknown) => normalizeList<PublicUser>(raw),
+      providesTags: ["Users"],
+    }),
+
+    adminGetUser: b.query<PublicUser, string>({
+      query: (id) => ({ url: `/admin/users/${id}` }),
+      transformResponse: (raw: unknown) => {
+        if (raw && typeof raw === "object") {
+          const o = raw as Record<string, unknown>;
+          return (
+            (o.data as PublicUser | undefined) ??
+            (o.user as PublicUser | undefined) ??
+            (raw as PublicUser)
+          );
+        }
+        return raw as PublicUser;
+      },
+      providesTags: (_r, _e, id) => [{ type: "Users", id }],
+    }),
+
+    adminCreateUser: b.mutation<
+      PublicUser,
+      { name: string; email: string; role: Role; password: string }
+    >({
+      query: (body) => ({ url: "/admin/users", method: "POST", data: body }),
+      invalidatesTags: ["Users"],
+    }),
+
+    adminUpdateUser: b.mutation<
+      PublicUser,
+      { id: string; patch: Partial<Pick<PublicUser, "name" | "role" | "status">> & { password?: string } }
+    >({
+      query: ({ id, patch }) => ({
+        url: `/admin/users/${id}`,
+        method: "PATCH",
+        data: patch,
+      }),
+      invalidatesTags: ["Users"],
+    }),
+  }),
+});
+
+export const {
+  useAdminListUsersQuery,
+  useAdminGetUserQuery,
+  useAdminCreateUserMutation,
+  useAdminUpdateUserMutation,
+} = userApi;
+
 ```
 
 ```javascript
@@ -2291,7 +2855,54 @@ export default slice.reducer;
 ```
 
 ```javascript
-// src/types/api.d.ts
+// src/types/api.ts
+
+export type PageMeta = {
+  page: number;
+  limit: number;
+  total: number;
+  pageCount: number;
+};
+
+export type QueryError = { status: number; data: unknown };
+
+/** Some endpoints return { items, meta }, others { data, meta }, others a bare array. */
+export function normalizeList<T>(
+  raw: unknown
+): { items: T[]; meta?: PageMeta } {
+  if (Array.isArray(raw)) return { items: raw };
+
+  if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    const fromItems = Array.isArray(obj.items)
+      ? (obj.items as T[])
+      : undefined;
+    const fromData = Array.isArray(obj.data)
+      ? (obj.data as T[])
+      : undefined;
+    const meta = (obj.meta as PageMeta | undefined) ?? undefined;
+
+    if (fromItems) return { items: fromItems, meta };
+    if (fromData) return { items: fromData, meta };
+  }
+  return { items: [] };
+}
+
+/** Turn unknown error (Axios, fetch, thrown string) into RTK-friendly error. */
+export function toQueryError(e: unknown): QueryError {
+  type MaybeAxiosErr = { response?: { status?: number; data?: unknown } };
+  const m = e as MaybeAxiosErr;
+
+  const status =
+    typeof m?.response?.status === "number" ? m.response!.status : 500;
+
+  const data =
+    m?.response?.data ??
+    (e instanceof Error ? e.message : e ?? "Unknown error");
+
+  return { status, data };
+}
+
 ```
 
 ```javascript

@@ -21,7 +21,7 @@ export default function AuthCard({
 }) {
   return (
     <div className="mx-auto w-full max-w-md p-6">
-      <Card>
+      <Card className="bg-accent border-border">
         <CardHeader>
           <CardTitle className="text-xl">{title}</CardTitle>
           {description ? (
