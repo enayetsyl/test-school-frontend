@@ -64,19 +64,20 @@ export const examApi = baseApi.injectEndpoints({
       query: (body) => ({ url: "/exam/violation", method: "POST", data: body }),
     }),
 
-    /** Video chunk upload (multipart) — ?sessionId=...&index=N, field key: 'chunk' */
     uploadVideoChunk: b.mutation<
-      { stored: true; chunks: number },
-      { sessionId: string; index: number; blob: Blob }
+      { ok: boolean },
+      { sessionId: string; index: number; blob: Blob; mime: string }
     >({
-      query: ({ sessionId, index, blob }) => {
+      query: ({ sessionId, index, blob, mime }) => {
         const fd = new FormData();
-        fd.append("chunk", blob);
+        fd.append("sessionId", sessionId);
+        fd.append("index", String(index));
+        fd.append("file", blob, `chunk-${index}.webm`);
+        fd.append("mime", mime);
         return {
           url: `/exam/video/upload-chunk`,
           method: "POST",
-          params: { sessionId, index },
-          data: fd,
+          body: fd,
         };
       },
     }),

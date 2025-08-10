@@ -366,7 +366,9 @@ import Logo from "../common/Logo";
 function linkCls({ isActive }: { isActive: boolean }) {
   return [
     "px-3 py-2 rounded-md text-sm font-medium transition",
-    isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground hover:bg-accent",
+    isActive
+      ? "bg-accent text-accent-foreground"
+      : "text-muted-foreground hover:text-foreground hover:bg-accent",
   ].join(" ");
 }
 
@@ -378,13 +380,15 @@ export default function AppNavbar() {
 
   const links = [
     { to: "/student/dashboard", label: "Dashboard", show: true },
+    { to: "/student/exam/step/:n", label: "Exam", show: true },
+    { to: "/student/exam/result", label: "Result", show: true },
     { to: "/admin", label: "Admin", show: role === "admin" },
     { to: "/supervisor", label: "Supervisor", show: role === "supervisor" },
-  ].filter(l => l.show);
+  ].filter((l) => l.show);
 
   const onLogout = async () => {
     try {
-      await logout().unwrap();               // clears Redux auth in onQueryStarted
+      await logout().unwrap(); // clears Redux auth in onQueryStarted
       navigate("/login", { replace: true }); // send to login after server logout
     } catch {
       // already handled by service/axios toasts if any
@@ -395,12 +399,12 @@ export default function AppNavbar() {
   return (
     <header className="border-b bg-card">
       <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
-    <Logo className="shrink-0" withText={false} />
+        <Logo className="shrink-0" withText={false} />
         {/* <div className="font-semibold">Test_School</div> */}
 
         <nav className="flex-1">
           <ul className="flex items-center gap-1">
-            {links.map(l => (
+            {links.map((l) => (
               <li key={l.to}>
                 <NavLink to={l.to} className={linkCls}>
                   {l.label}
@@ -431,6 +435,7 @@ export default function AppNavbar() {
     </header>
   );
 }
+
 
 ```
 
@@ -2558,17 +2563,16 @@ export const questionApi = baseApi.injectEndpoints({
   endpoints: (b) => ({
     listQuestions: b.query<
       { items: IQuestion[]; meta?: PageMeta },
-      | {
-          page?: number;
-          limit?: number;
-          q?: string;
-          level?: QuestionLevel;
-          competencyId?: string;
-          isActive?: boolean;
-          sortBy?: "createdAt" | "level" | "prompt";
-          sortOrder?: "asc" | "desc";
-        }
-      | void
+      {
+        page?: number;
+        limit?: number;
+        q?: string;
+        level?: QuestionLevel;
+        competencyId?: string;
+        isActive?: boolean;
+        sortBy?: "createdAt" | "level" | "prompt";
+        sortOrder?: "asc" | "desc";
+      } | void
     >({
       query: (params) => ({ url: "/questions", params }),
       transformResponse: (raw: unknown) => normalizeList<IQuestion>(raw),
@@ -2616,11 +2620,19 @@ export const questionApi = baseApi.injectEndpoints({
       invalidatesTags: ["Questions"],
     }),
 
-    importQuestions: b.mutation<{ imported: number }, { file: File; mode?: "upsert" | "insert" }>({
+    importQuestions: b.mutation<
+      { imported: number },
+      { file: File; mode?: "upsert" | "insert" }
+    >({
       query: ({ file, mode = "upsert" }) => {
         const form = new FormData();
         form.append("file", file);
-        return { url: `/questions/import`, method: "POST", params: { mode }, data: form };
+        return {
+          url: `/questions/import`,
+          method: "POST",
+          params: { mode },
+          data: form,
+        };
       },
       invalidatesTags: ["Questions"],
     }),
@@ -2628,7 +2640,9 @@ export const questionApi = baseApi.injectEndpoints({
     exportQuestions: b.query<Blob, void>({
       async queryFn(): Promise<{ data: Blob } | { error: QueryError }> {
         try {
-          const res = await api.get(`/questions/export`, { responseType: "blob" });
+          const res = await api.get(`/questions/export`, {
+            responseType: "blob",
+          });
           return { data: res.data as Blob };
         } catch (e: unknown) {
           return { error: toQueryError(e) };
@@ -2648,6 +2662,7 @@ export const {
   useImportQuestionsMutation,
   useExportQuestionsQuery,
 } = questionApi;
+
 
 ```
 
@@ -2769,6 +2784,108 @@ export default authSlice.reducer;
 
 ```javascript
 // src/store/exam.slice.ts
+import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
+
+export type Step = 1 | 2 | 3;
+
+export type ExamAnswer = {
+  questionId: string;
+  selectedIndex: number;
+  elapsedMs: number; // time user spent on that question
+};
+
+export type ExamStatus = "idle" | "active" | "submitted" | "cancelled";
+
+export type ExamState = {
+  sessionId: string | null;
+  step: Step | null;
+  deadlineAt: string | null;
+  status: ExamStatus;
+
+  questionIds: string[];           // ordered for this attempt
+  currentIndex: number;            // 0-based
+  answers: Record<string, ExamAnswer>;
+
+  startedAt: number | null;        // epoch ms
+  currentShownAt: number | null;   // epoch ms (for elapsedMs per question)
+};
+
+const initialState: ExamState = {
+  sessionId: null,
+  step: null,
+  deadlineAt: null,
+  status: "idle",
+  questionIds: [],
+  currentIndex: 0,
+  answers: {},
+  startedAt: null,
+  currentShownAt: null,
+};
+
+const slice = createSlice({
+  name: "exam",
+  initialState,
+  reducers: {
+    begin(
+      state,
+      action: PayloadAction<{
+        sessionId: string;
+        step: Step;
+        deadlineAt: string;
+        questionIds: string[];
+      }>,
+    ) {
+      const { sessionId, step, deadlineAt, questionIds } = action.payload;
+      state.sessionId = sessionId;
+      state.step = step;
+      state.deadlineAt = deadlineAt;
+      state.status = "active";
+      state.questionIds = questionIds;
+      state.currentIndex = 0;
+      state.answers = {};
+      state.startedAt = Date.now();
+      state.currentShownAt = Date.now();
+    },
+    recordAnswer(
+      state,
+      action: PayloadAction<{ questionId: string; selectedIndex: number }>,
+    ) {
+      const { questionId, selectedIndex } = action.payload;
+      const now = Date.now();
+      const elapsedMs = Math.max(0, (state.currentShownAt ?? now) ? now - (state.currentShownAt ?? now) : 0);
+      state.answers[questionId] = { questionId, selectedIndex, elapsedMs };
+    },
+    goNext(state) {
+      if (state.currentIndex < state.questionIds.length - 1) {
+        state.currentIndex += 1;
+        state.currentShownAt = Date.now();
+      }
+    },
+    goPrev(state) {
+      if (state.currentIndex > 0) {
+        state.currentIndex -= 1;
+        state.currentShownAt = Date.now();
+      }
+    },
+    setSubmitted(state) {
+      state.status = "submitted";
+    },
+    reset() {
+      return initialState;
+    },
+    setIndex(state, action: PayloadAction<number>) {
+      const i = action.payload;
+      if (i >= 0 && i < state.questionIds.length) {
+        state.currentIndex = i;
+        state.currentShownAt = Date.now();
+      }
+    },
+  },
+});
+
+export const { begin, recordAnswer, goNext, goPrev, setSubmitted, reset, setIndex } = slice.actions;
+export default slice.reducer;
+
 ```
 
 ```javascript
@@ -2790,16 +2907,22 @@ export function makePersistConfig<S>(): PersistConfig<S> {
 ```javascript
 // src/store/store.ts
 import { configureStore, combineReducers } from "@reduxjs/toolkit";
-import { persistReducer, persistStore, type PersistConfig } from "redux-persist";
+import {
+  persistReducer,
+  persistStore,
+  type PersistConfig,
+} from "redux-persist";
 import storage from "redux-persist/lib/storage";
 import auth from "./auth.slice";
 import ui from "./ui.slice";
+import exam from "./exam.slice";
 import { baseApi } from "@/services/baseApi";
 
 // 1) Build root reducer
 const rootReducer = combineReducers({
   auth,
   ui,
+  exam,
   [baseApi.reducerPath]: baseApi.reducer,
 });
 
@@ -2833,25 +2956,6 @@ export const persistor = persistStore(store);
 export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch;
 
-```
-
-```javascript
-// src/store/ui.slice.ts
-import { createSlice } from "@reduxjs/toolkit";
-const slice = createSlice({
-  name: "ui",
-  initialState: { globalLoading: false },
-  reducers: {
-    startLoading: (s) => {
-      s.globalLoading = true;
-    },
-    stopLoading: (s) => {
-      s.globalLoading = false;
-    },
-  },
-});
-export const { startLoading, stopLoading } = slice.actions;
-export default slice.reducer;
 ```
 
 ```javascript
@@ -3321,6 +3425,8 @@ import ResetPasswordPage from "@/features/auth/pages/ResetPasswordPage";
 import { StudentDashboard } from "@/routes/pages";
 import AppLayout from "@/components/layouts/AppLayout";
 import PublicAuthLayout from "@/components/layouts/PublicAuthLayout";
+import ExamStepPage from "@/features/exam/pages/ExamStepPage";
+import ExamResultPage from "@/features/exam/pages/ExamResultPage";
 
 export const router = createBrowserRouter([
   { path: "/", element: <Navigate to="/student/dashboard" replace /> },
@@ -3344,7 +3450,8 @@ export const router = createBrowserRouter([
         element: <AppLayout />, // layout with navbar
         children: [
           { path: "/student/dashboard", element: <StudentDashboard /> },
-
+          // { path: "/student/exam/step/:n", element: <ExamStepPage /> },
+          // { path: "/student/exam/result", element: <ExamResultPage /> },
           // Admin-only examples
           {
             element: <RoleGuard allow={["admin"]} />,
@@ -3355,7 +3462,13 @@ export const router = createBrowserRouter([
               },
             ],
           },
-
+          {
+            element: <RoleGuard allow={["student"]} />,
+            children: [
+              { path: "/student/exam/step/:n", element: <ExamStepPage /> },
+              { path: "/student/exam/result", element: <ExamResultPage /> },
+            ],
+          },
           // Supervisor-only placeholder (optional)
           // {
           //   element: <RoleGuard allow={["supervisor"]} />,
@@ -3389,58 +3502,852 @@ export const useTheme = () => {
 ```
 
 ```javascript
+// src/features/exam/hooks/use-countdown.ts
+import { useEffect, useMemo, useRef, useState } from "react";
+
+export function useCountdown(deadlineIso?: string) {
+  const deadline = useMemo(() => (deadlineIso ? new Date(deadlineIso).getTime() : null), [deadlineIso]);
+  const [now, setNow] = useState<number>(() => Date.now());
+  const raf = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!deadline) return;
+    const tick = () => {
+      setNow(Date.now());
+      raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(tick);
+    return () => {
+      if (raf.current) cancelAnimationFrame(raf.current);
+    };
+  }, [deadline]);
+
+  const msLeft = deadline ? Math.max(0, deadline - now) : 0;
+  const expired = deadline ? msLeft <= 0 : false;
+
+  const mm = Math.floor(msLeft / 60000);
+  const ss = Math.floor((msLeft % 60000) / 1000);
+  const label = `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+
+  return { msLeft, expired, label };
+}
 
 ```
 
 ```javascript
+// src/features/exam/utils/step-levels.ts
+export type QuestionLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
+
+export function levelsForStep(step: 1 | 2 | 3): [QuestionLevel, QuestionLevel] {
+  if (step === 1) return ["A1", "A2"];
+  if (step === 2) return ["B1", "B2"];
+  return ["C1", "C2"];
+}
 
 ```
 
 ```javascript
+// src/features/exam/hooks/use-proctoring.ts
+import { useEffect, useRef } from "react";
+import { useViolationMutation } from "@/services/exam.api";
+
+type ViolationType = "TAB_BLUR" | "FULLSCREEN_EXIT" | "COPY" | "PASTE" | "RIGHT_CLICK";
+
+export function useProctoring(sessionId?: string | null) {
+  const [report] = useViolationMutation();
+  const lastSentAtRef = useRef<Record<ViolationType, number>>({
+    TAB_BLUR: 0,
+    FULLSCREEN_EXIT: 0,
+    COPY: 0,
+    PASTE: 0,
+    RIGHT_CLICK: 0,
+  });
+
+  const throttleMs = 1500;
+  const reportSafe = (type: ViolationType, meta?: Record<string, unknown>) => {
+    if (!sessionId) return;
+    const now = Date.now();
+    const last = lastSentAtRef.current[type] ?? 0;
+    if (now - last < throttleMs) return; // throttle each type
+    lastSentAtRef.current[type] = now;
+    void report({ sessionId, type, meta });
+  };
+
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        reportSafe("TAB_BLUR", { visibilityState: "hidden" });
+      }
+    };
+
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      reportSafe("RIGHT_CLICK");
+    };
+
+    const onKeydown = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (e.ctrlKey || e.metaKey) {
+        if (k === "c") {
+          e.preventDefault();
+          reportSafe("COPY");
+        } else if (k === "v") {
+          e.preventDefault();
+          reportSafe("PASTE");
+        }
+        // Note: 'x' (cut) is NOT supported by backend enum -> ignore
+      }
+      if (e.key === "Escape") {
+        reportSafe("FULLSCREEN_EXIT");
+      }
+    };
+
+    const onCopy = () => reportSafe("COPY");
+    const onPaste = () => reportSafe("PASTE");
+
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("contextmenu", onContextMenu, { capture: true });
+    window.addEventListener("keydown", onKeydown, { capture: true });
+    document.addEventListener("copy", onCopy);
+    document.addEventListener("paste", onPaste);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("contextmenu", onContextMenu);
+      window.removeEventListener("keydown", onKeydown);
+      document.removeEventListener("copy", onCopy);
+      document.removeEventListener("paste", onPaste);
+    };
+  }, [report, sessionId]);
+}
 
 ```
 
 ```javascript
+// src/features/exam/components/ExamTimer.tsx
+import { Badge } from "@/components/ui/badge";
+
+export default function ExamTimer({ label, danger }: { label: string; danger?: boolean }) {
+  return (
+    <Badge variant={danger ? "destructive" : "outline"} className="text-base px-3 py-1">
+      ⏱ {label}
+    </Badge>
+  );
+}
 
 ```
 
 ```javascript
+// src/features/exam/components/ExamProgress.tsx
+import { Badge } from "@/components/ui/badge";
+
+export default function ExamProgress({ answered, total }: { answered: number; total: number }) {
+  return (
+    <Badge variant="secondary" className="text-base px-3 py-1">
+      {answered}/{total} answered
+    </Badge>
+  );
+}
 
 ```
 
 ```javascript
+// src/features/exam/components/ExamQuestion.tsx
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+
+export type QuestionVM = {
+  id: string;
+  prompt: string;
+  options: string[];
+};
+
+export default function ExamQuestion({
+  q,
+  selectedIndex,
+  onSelect,
+}: {
+  q: QuestionVM;
+  selectedIndex?: number;
+  onSelect: (index: number) => void;
+}) {
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader>
+        <CardTitle className="text-lg">{q.prompt}</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-2">
+        {q.options.map((opt, idx) => (
+          <Button
+            key={idx}
+            type="button"
+            variant={selectedIndex === idx ? "default" : "outline"}
+            className="justify-start"
+            onClick={() => onSelect(idx)}
+          >
+            <span className="mr-2 rounded-md border px-2 py-0.5 text-xs">{String.fromCharCode(65 + idx)}</span>
+            {opt}
+          </Button>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
 
 ```
 
 ```javascript
+// src/features/exam/pages/ExamStepPage.tsx
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import ExamQuestion, { type QuestionVM } from "../components/ExamQuestion";
+import ExamTimer from "../components/ExamTimer";
+import ExamProgress from "../components/ExamProgress";
+
+import {
+  useStartExamMutation,
+  useAnswerMutation,
+  useSubmitMutation,
+} from "@/services/exam.api";
+import {
+  useListQuestionsQuery,
+  type IQuestion,
+  type QuestionLevel,
+} from "@/services/question.api";
+
+import {
+  begin,
+  goNext,
+  goPrev,
+  recordAnswer,
+  reset,
+  setIndex,
+  setSubmitted,
+  type Step,
+} from "@/store/exam.slice";
+import type { RootState } from "@/store/store";
+
+import { useCountdown } from "../hooks/use-countdown";
+import { useProctoring } from "../hooks/use-proctoring";
+import { levelsForStep } from "../utils/step-levels";
+import { toast } from "sonner";
+import QuestionPalette from "../components/QuestionPalette";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import FullscreenGate from "../components/FullscreenGate";
+import { useKeyNav } from "../hooks/use-key-nav";
+import { useVideoProctor } from "../hooks/use-video-proctor";
+import QuestionSkeleton from "../components/QuestionSkeleton";
+import { useFullscreen } from "../hooks/use-fullscreen";
+
+function pickRandom<T>(arr: T[], n: number): T[] {
+  const copy = arr.slice();
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy.slice(0, Math.min(n, copy.length));
+}
+
+function getErrorMessage(e: unknown): string {
+  // RTKQ baseQuery error shape
+  if (typeof e === "object" && e !== null && "data" in e) {
+    const data = (e as { data?: { message?: string } }).data;
+    if (data?.message) return data.message;
+  }
+  if (e instanceof Error) return e.message;
+  return "Something went wrong";
+}
+
+const getId = (x: unknown): string => {
+  const anyX = x as { _id?: string; id?: string };
+  return anyX._id ?? anyX.id ?? "";
+};
+
+export default function ExamStepPage() {
+  const { n } = useParams();
+  const step: Step = n === "2" ? 2 : n === "3" ? 3 : 1;
+
+  const dispatch = useDispatch();
+  const navigate = useNavigate();
+
+  const exam = useSelector((s: RootState) => s.exam);
+  // const answeredCount = Object.keys(exam.answers).length;
+
+  const [startExam, { isLoading: isStarting }] = useStartExamMutation();
+  const [sendAnswer] = useAnswerMutation();
+  const [submit, { isLoading: isSubmitting }] = useSubmitMutation();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // Fetch pool for both levels and assemble 44 questions (22 per level) client-side
+  const [lv1, lv2] = levelsForStep(step);
+  const q1 = useListQuestionsQuery({ level: lv1 as QuestionLevel, limit: 100 });
+  const q2 = useListQuestionsQuery({ level: lv2 as QuestionLevel, limit: 100 });
+
+  // Kick off session on mount
+  useEffect(() => {
+    let cancelled = false;
+
+    const init = async () => {
+      try {
+        // Start exam session on server
+        const res = await startExam({
+          step,
+          screen: { width: window.innerWidth, height: window.innerHeight },
+        }).unwrap();
+        if (cancelled) return;
+
+        // Build local questionnaire once pools are ready
+        const [r1, r2] = await Promise.all([q1.refetch(), q2.refetch()]);
+        const items1 = ((r1 as { data?: { items?: IQuestion[] } }).data
+          ?.items ?? []) as IQuestion[];
+        const items2 = ((r2 as { data?: { items?: IQuestion[] } }).data
+          ?.items ?? []) as IQuestion[];
+
+        if (items1.length < 1 || items2.length < 1) {
+          toast.error("No questions available for this step yet.");
+          navigate("/student/dashboard", { replace: true });
+          return;
+        }
+
+        const chosen1 = pickRandom(items1, 22);
+        const chosen2 = pickRandom(items2, 22);
+        const ordered = [...chosen1, ...chosen2];
+
+        const ids = ordered.map((q) => getId(q)).filter(Boolean);
+        if (ids.length === 0) {
+          toast.error("Questions loaded but missing IDs.");
+          navigate("/student/dashboard", { replace: true });
+          return;
+        }
+
+        dispatch(
+          begin({
+            sessionId: res.sessionId,
+            step,
+            deadlineAt: res.deadlineAt,
+            questionIds: ids,
+          })
+        );
+      } catch (e: unknown) {
+        toast.error(getErrorMessage(e));
+        navigate("/student/dashboard", { replace: true });
+      }
+    };
+
+    void init();
+    return () => {
+      cancelled = true;
+      dispatch(reset());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, navigate, startExam, step]);
+
+  // Countdown & proctoring
+  const { label, expired } = useCountdown(exam.deadlineAt ?? undefined);
+  useProctoring(exam.sessionId);
+
+  // Compute current question VM
+  const questions = useMemo(() => {
+    const map = new Map<string, IQuestion>();
+    (q1.data?.items ?? []).forEach((x) => map.set(getId(x), x as IQuestion));
+    (q2.data?.items ?? []).forEach((x) => map.set(getId(x), x as IQuestion));
+    return map;
+  }, [q1.data, q2.data]);
+
+  const currentId = exam.questionIds[exam.currentIndex];
+  const current = currentId ? questions.get(currentId) : undefined;
+  const selectedIndex = current
+    ? exam.answers[current._id]?.selectedIndex
+    : undefined;
+
+  const answeredSet = useMemo(() => {
+    const set = new Set<number>();
+    exam.questionIds.forEach((id, idx) => {
+      if (exam.answers[id]?.selectedIndex !== undefined) set.add(idx);
+    });
+    return set;
+  }, [exam.answers, exam.questionIds]);
+
+  const total = exam.questionIds.length || 44;
+  const unansweredCount = total - answeredSet.size;
+
+  // Auto-submit on expiry
+  useEffect(() => {
+    if (!expired || !exam.sessionId || exam.status !== "active") return;
+    void onSubmit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expired]);
+
+  // Warn on unload
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (exam.status === "active") {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [exam.status]);
+
+  const onSelect = async (idx: number) => {
+    if (!current || !exam.sessionId) return;
+  if (!isFullscreen) {
+      toast.error("Enter fullscreen to answer.");
+      await ensureFullscreen();
+      return;
+    }
+    dispatch(recordAnswer({ questionId: current._id, selectedIndex: idx }));
+    // send to server with elapsed
+    const elapsedMs = Math.max(
+      0,
+      Date.now() - (exam.currentShownAt ?? Date.now())
+    );
+
+    try {
+      await sendAnswer({
+        sessionId: exam.sessionId,
+        questionId: current._id,
+        selectedIndex: idx,
+        elapsedMs,
+      }).unwrap();
+    } catch {
+      // best-effort; UI keeps moving
+    }
+    // Auto-advance
+    if (exam.currentIndex < exam.questionIds.length - 1) {
+      dispatch(goNext());
+    }
+  };
+
+  const onSubmit = async () => {
+    if (!exam.sessionId) return;
+    if (!document.fullscreenElement) {
+      toast.error("Please enter fullscreen to submit.");
+      return;
+    }
+    try {
+      const result = await submit({ sessionId: exam.sessionId }).unwrap();
+      dispatch(setSubmitted());
+      navigate("/student/exam/result", {
+        replace: true,
+        state: {
+          scorePct: result.scorePct,
+          awardedLevel: result.awardedLevel,
+          proceedNext: result.proceedNext,
+          step,
+        },
+      });
+    } catch {
+      toast.error("Could not submit. Please try again.");
+    } finally {
+      setConfirmOpen(false);
+    }
+  };
+
+  const vm: QuestionVM | undefined = current
+    ? { id: current._id, prompt: current.prompt, options: current.options }
+    : undefined;
+
+  // const total = exam.questionIds.length || 44;
+
+useKeyNav(
+  () => isFullscreen && dispatch(goPrev()),
+  () => isFullscreen && dispatch(goNext()),
+);
+
+  useVideoProctor(exam.sessionId, exam.status === "active");
+
+  const isFullscreen = useFullscreen();
+
+  const ensureFullscreen = async () => {
+    if (!document.fullscreenElement) {
+      try {
+        await document.documentElement.requestFullscreen();
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  return (
+    <div className="grid gap-6">
+      <Card className="bg-accent/50 border-border">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>Step {step}</span>
+            <div className="flex items-center gap-2">
+              <ExamProgress answered={answeredSet.size} total={total} />
+              <ExamTimer
+                label={label}
+                danger={expired || (label.startsWith("00:") && !expired)}
+              />
+            </div>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            disabled={!isFullscreen || exam.currentIndex === 0}
+            onClick={() => dispatch(goPrev())}
+          >
+            Prev
+          </Button>
+          <Button
+            variant="outline"
+            disabled={!isFullscreen || exam.currentIndex >= total - 1}
+            onClick={() => dispatch(goNext())}
+          >
+            Next
+          </Button>
+
+          <div className="flex-1" />
+          <Button
+            variant="destructive"
+            onClick={() =>
+              isFullscreen ? setConfirmOpen(true) : ensureFullscreen()
+            }
+            disabled={isSubmitting || isStarting}
+          >
+            Submit
+          </Button>
+        </CardContent>
+      </Card>
+      <FullscreenGate />
+      {/* Palette */}
+      <QuestionPalette
+        total={total}
+        currentIndex={exam.currentIndex}
+        answered={answeredSet}
+        onJump={(i) => dispatch(setIndex(i))}
+        locked={!isFullscreen}
+        onRequestFullscreen={ensureFullscreen}
+      />
+
+      {/* Question */}
+      {vm ? (
+        <ExamQuestion
+          q={vm}
+          selectedIndex={selectedIndex}
+          onSelect={onSelect}
+        />
+      ) : (
+        <QuestionSkeleton />
+      )}
+
+      {/* Confirm modal */}
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Submit Step {step}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {unansweredCount > 0
+                ? `You still have ${unansweredCount} unanswered ${unansweredCount === 1 ? "question" : "questions"}.`
+                : "All questions answered."}{" "}
+              Once submitted, you can’t change your answers.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSubmitting}>
+              Review again
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={onSubmit} disabled={isSubmitting}>
+              {isSubmitting ? "Submitting…" : "Yes, submit"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
 
 ```
 
 ```javascript
+// src/features/exam/hooks/use-key-nav.ts
+import { useEffect } from "react";
+export function useKeyNav(onPrev: () => void, onNext: () => void) {
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") onPrev();
+      if (e.key === "ArrowRight") onNext();
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [onPrev, onNext]);
+}
 
 ```
 
 ```javascript
+// src/features/exam/components/FullscreenGate.tsx
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+
+export default function FullscreenGate() {
+  const [isFs, setIsFs] = useState < boolean > !!document.fullscreenElement;
+  useEffect(() => {
+    const onChange = () => setIsFs(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  if (isFs) return null;
+
+  const enter = async () => {
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch {
+      // ignored
+    }
+  };
+
+  return (
+    <Card className="p-4 border-dashed">
+      <div className="mb-2 font-medium">
+        Enter fullscreen to start/continue the exam
+      </div>
+      <Button onClick={enter}>Enter fullscreen</Button>
+    </Card>
+  );
+}
+```
+
+```javascript
+// src/features/exam/hooks/use-fullscreen.ts
+import { useEffect, useState } from "react";
+
+export function useFullscreen(): boolean {
+  const [isFs, setIsFs] = useState<boolean>(!!document.fullscreenElement);
+  useEffect(() => {
+    const onChange = () => setIsFs(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+  return isFs;
+}
 
 ```
 
 ```javascript
+// src/features/exam/hooks/use-video-proctor.ts
+import { useEffect, useRef } from "react";
+import { useUploadVideoChunkMutation } from "@/services/exam.api";
+
+export function useVideoProctor(sessionId?: string | null, running?: boolean) {
+  const [upload] = useUploadVideoChunkMutation();
+  const mediaRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const indexRef = useRef(0);
+
+  // reset chunk counter when session changes
+  useEffect(() => {
+    indexRef.current = 0;
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || !running) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        if (cancelled) {
+          stream.getTracks().forEach(t => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+
+        const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+          ? "video/webm;codecs=vp9"
+          : "video/webm";
+
+        const rec = new MediaRecorder(stream, {
+          mimeType: mime,
+          videoBitsPerSecond: 800_000,
+          audioBitsPerSecond: 64_000,
+        });
+        mediaRef.current = rec;
+
+        rec.ondataavailable = async (e) => {
+          if (!e.data || e.data.size === 0 || !sessionId) return;
+          const idx = indexRef.current++;
+          try {
+            await upload({ sessionId, index: idx, blob: e.data, mime }).unwrap();
+          } catch {
+            // swallow – next chunk will keep going
+          }
+        };
+
+        rec.start(5000); // 5s chunks
+      } catch {
+        // camera/mic blocked or not supported – ignore in dev
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (mediaRef.current && mediaRef.current.state !== "inactive") {
+        mediaRef.current.stop();
+      }
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      mediaRef.current = null;
+    };
+  }, [sessionId, running, upload]);
+}
 
 ```
 
 ```javascript
+// src/features/exam/components/QuestionSkeleton.tsx
+import { Card, CardContent } from "@/components/ui/card";
+export default function QuestionSkeleton() {
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-6">
+        <div className="h-5 w-2/3 animate-pulse rounded bg-muted" />
+        <div className="h-10 w-full animate-pulse rounded bg-muted" />
+        <div className="h-10 w-full animate-pulse rounded bg-muted" />
+        <div className="h-10 w-full animate-pulse rounded bg-muted" />
+        <div className="h-10 w-full animate-pulse rounded bg-muted" />
+      </CardContent>
+    </Card>
+  );
+}
+```
+
+```javascript
+// src/features/exam/components/QuestionPalette.tsx
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+type Props = {
+  total: number;
+  currentIndex: number;
+  answered: Set<number>;
+  onJump: (index: number) => void;
+  locked?: boolean;                       // 👈 new
+  onRequestFullscreen?: () => void;       // 👈 new
+};
+
+export default function QuestionPalette({
+  total, currentIndex, answered, onJump, locked = false, onRequestFullscreen,
+}: Props) {
+  if (total <= 0) return null;
+
+  return (
+    <div className="rounded-xl border bg-card p-3">
+      <div className="mb-2 text-sm font-medium">
+        Question palette {locked && <span className="text-muted-foreground">(fullscreen required)</span>}
+      </div>
+      <div className="grid grid-cols-8 gap-2 sm:grid-cols-10 md:grid-cols-12">
+        {Array.from({ length: total }, (_, i) => {
+          const isCurrent = i === currentIndex;
+          const isAnswered = answered.has(i);
+          return (
+            <Button
+              key={i}
+              type="button"
+              size="sm"
+              variant={isCurrent ? "default" : isAnswered ? "secondary" : "outline"}
+              className={cn("h-8 w-8 p-0 font-semibold", isCurrent && "ring-2 ring-offset-2")}
+              disabled={locked}
+              onClick={() => (locked ? onRequestFullscreen?.() : onJump(i))}
+              aria-current={isCurrent ? "true" : "false"}
+              aria-label={`Question ${i + 1}${isAnswered ? " answered" : " not answered"}`}
+              title={locked ? "Enter fullscreen to jump" : undefined}
+            >
+              {i + 1}
+            </Button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 ```
 
 ```javascript
+// src/features/exam/pages/ExamResultPage.tsx
+import { useLocation, useNavigate } from "react-router-dom";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import type { Step } from "@/store/exam.slice";
 
-```
+type ResultState = {
+  scorePct: number;
+  awardedLevel: string;
+  proceedNext: boolean;
+   step?: Step;
+};
 
-```javascript
+export default function ExamResultPage() {
+  const { state } = useLocation();
+  const nav = useNavigate();
+  const s = (state ?? {}) as Partial<ResultState>;
 
-```
+  const step = (s.step ?? 1) as Step;
+  const nextStep: Step | null = step < 3 ? ((step + 1) as Step) : null;
 
-```javascript
+  return (
+    <Card className="max-w-lg">
+      <CardHeader>
+           <CardTitle>Step {step} submitted</CardTitle>
+        <CardDescription>Your results are below.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <div className="text-sm">
+          <div><span className="font-medium">Score:</span> {s.scorePct ?? "-"}%</div>
+          <div><span className="font-medium">Awarded level:</span> {s.awardedLevel ?? "-"}</div>
+          <div><span className="font-medium">Eligible to proceed to next step:</span> {String(!!s.proceedNext)}</div>
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={() => nav("/student/dashboard", { replace: true })}>Go to Dashboard</Button>
+          {nextStep && s.proceedNext ? (
+            <Button
+              variant="outline"
+              onClick={() => nav(`/student/exam/step/${nextStep}`, { replace: true })}
+            >
+              Start step {nextStep}
+            </Button>
+          ) : step === 3 ? (
+            // Finished all three steps — no next step
+            <Button variant="outline" onClick={() => nav("/student/dashboard", { replace: true })}>
+              Finish
+            </Button>
+          ) : (
+            // Not eligible to proceed — offer a retake of the same step
+            <Button
+              variant="outline"
+              onClick={() => nav(`/student/exam/step/${step}`, { replace: true })}
+            >
+              Retake step {step}
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 ```
 

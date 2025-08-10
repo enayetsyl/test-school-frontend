@@ -24,6 +24,8 @@ export default function AppNavbar() {
 
   const links = [
     { to: "/student/dashboard", label: "Dashboard", show: true },
+    { to: "/student/exam/step/:n", label: "Exam", show: true },
+    { to: "/student/exam/result", label: "Result", show: true },
     { to: "/admin", label: "Admin", show: role === "admin" },
     { to: "/supervisor", label: "Supervisor", show: role === "supervisor" },
   ].filter((l) => l.show);

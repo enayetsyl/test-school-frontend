@@ -9,6 +9,8 @@ import ResetPasswordPage from "@/features/auth/pages/ResetPasswordPage";
 import { StudentDashboard } from "@/routes/pages";
 import AppLayout from "@/components/layouts/AppLayout";
 import PublicAuthLayout from "@/components/layouts/PublicAuthLayout";
+import ExamStepPage from "@/features/exam/pages/ExamStepPage";
+import ExamResultPage from "@/features/exam/pages/ExamResultPage";
 
 export const router = createBrowserRouter([
   { path: "/", element: <Navigate to="/student/dashboard" replace /> },
@@ -32,7 +34,8 @@ export const router = createBrowserRouter([
         element: <AppLayout />, // layout with navbar
         children: [
           { path: "/student/dashboard", element: <StudentDashboard /> },
-
+          // { path: "/student/exam/step/:n", element: <ExamStepPage /> },
+          // { path: "/student/exam/result", element: <ExamResultPage /> },
           // Admin-only examples
           {
             element: <RoleGuard allow={["admin"]} />,
@@ -43,7 +46,13 @@ export const router = createBrowserRouter([
               },
             ],
           },
-
+          {
+            element: <RoleGuard allow={["student"]} />,
+            children: [
+              { path: "/student/exam/step/:n", element: <ExamStepPage /> },
+              { path: "/student/exam/result", element: <ExamResultPage /> },
+            ],
+          },
           // Supervisor-only placeholder (optional)
           // {
           //   element: <RoleGuard allow={["supervisor"]} />,

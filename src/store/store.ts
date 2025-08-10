@@ -8,12 +8,14 @@ import {
 import storage from "redux-persist/lib/storage";
 import auth from "./auth.slice";
 import ui from "./ui.slice";
+import exam from "./exam.slice";
 import { baseApi } from "@/services/baseApi";
 
 // 1) Build root reducer
 const rootReducer = combineReducers({
   auth,
   ui,
+  exam,
   [baseApi.reducerPath]: baseApi.reducer,
 });
 
