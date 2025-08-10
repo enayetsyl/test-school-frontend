@@ -1,6 +1,7 @@
 import { baseApi } from "./baseApi";
 import { setCredentials, clearAuth } from "@/store/auth.slice";
 import type { RootState } from "@/store/store";
+import type { ApiOk } from "@/types/api";
 import type { AppUser } from "@/types/user";
 
 export type RegisterBody = { name: string; email: string; password: string };
@@ -24,9 +25,11 @@ export const authApi = baseApi.injectEndpoints({
     // Login → sets credentials + invalidates /me so dependent screens auto-refresh
     login: b.mutation<LoginResult, LoginBody>({
       query: (body) => ({ url: "/auth/login", method: "POST", data: body }),
+      transformResponse: (raw: ApiOk<LoginResult>) => raw.data,
       async onQueryStarted(_, { dispatch, queryFulfilled }) {
         try {
           const { data } = await queryFulfilled;
+          console.log("login payload (after transform)", data);
           dispatch(
             setCredentials({ user: data.user, accessToken: data.accessToken }),
           );
@@ -40,12 +43,14 @@ export const authApi = baseApi.injectEndpoints({
     // Register → backend returns { user } (no token)
     register: b.mutation<RegisterResult, RegisterBody>({
       query: (body) => ({ url: "/auth/register", method: "POST", data: body }),
+      transformResponse: (raw: ApiOk<RegisterResult>) => raw.data,
       invalidatesTags: ["Me"],
     }),
 
     // Optional: manual refresh if you need it in a UI action
     refresh: b.mutation<{ accessToken: string }, void>({
       query: () => ({ url: "/auth/token/refresh", method: "POST" }),
+      transformResponse: (raw: ApiOk<{ accessToken: string }>) => raw.data,
       async onQueryStarted(_, { dispatch, queryFulfilled, getState }) {
         try {
           const { data } = await queryFulfilled;
@@ -66,6 +71,7 @@ export const authApi = baseApi.injectEndpoints({
     // OTP
     sendOtp: b.mutation<OtpOk, OtpSendBody>({
       query: (body) => ({ url: "/auth/otp/send", method: "POST", data: body }),
+      transformResponse: (raw: ApiOk<OtpOk>) => raw.data,
     }),
     verifyOtp: b.mutation<OtpOk, OtpVerifyBody>({
       query: (body) => ({
@@ -73,6 +79,7 @@ export const authApi = baseApi.injectEndpoints({
         method: "POST",
         data: body,
       }),
+      transformResponse: (raw: ApiOk<OtpOk>) => raw.data,
       invalidatesTags: ["Me"],
     }),
     resendOtp: b.mutation<OtpOk, OtpSendBody>({
@@ -81,22 +88,24 @@ export const authApi = baseApi.injectEndpoints({
         method: "POST",
         data: body,
       }),
+      transformResponse: (raw: ApiOk<OtpOk>) => raw.data,
     }),
 
     // Forgot/Reset
     forgot: b.mutation<OtpOk, ForgotBody>({
       query: (body) => ({ url: "/auth/forgot", method: "POST", data: body }),
+      transformResponse: (raw: ApiOk<OtpOk>) => raw.data,
     }),
     reset: b.mutation<OtpOk, ResetBody>({
       query: (body) => ({ url: "/auth/reset", method: "POST", data: body }),
+      transformResponse: (raw: ApiOk<OtpOk>) => raw.data,
     }),
 
     // Me / Logout
     me: b.query<MeResult, void>({
       query: () => ({ url: "/users/me" }),
+      transformResponse: (raw: ApiOk<MeResult>) => raw.data,
       providesTags: ["Me"],
-      // NOTE: This assumes baseApi unwraps to the payload under `data`.
-      // If your baseApi returns the full envelope, add: transformResponse: (r: any) => r.data
     }),
 
     logout: b.mutation<void, void>({

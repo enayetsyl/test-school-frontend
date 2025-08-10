@@ -1,13 +1,12 @@
 // src/services/user.api.ts
 import { baseApi } from "./baseApi";
-import type { PageMeta } from "@/types/api";
-import { normalizeList } from "@/types/api";
-
+import type { ApiOk } from "@/types/api";
+import { toPager, type PagerMeta } from "@/types/api";
 export type Role = "admin" | "student" | "supervisor";
-export type UserStatus = "active" | "inactive";
+export type UserStatus = "active" | "disabled";
 
 export type PublicUser = {
-  id: string;
+  _id: string;
   name: string;
   email: string;
   role: Role;
@@ -16,21 +15,25 @@ export type PublicUser = {
   updatedAt?: string;
 };
 
+export type AdminListUsersArgs = {
+  page?: number;
+  limit?: number;
+  q?: string;
+  role?: PublicUser["role"];
+  status?: PublicUser["status"];
+};
+
+export type AdminListUsersResult = { items: PublicUser[]; meta: PagerMeta };
+
 export const userApi = baseApi.injectEndpoints({
   endpoints: (b) => ({
-    adminListUsers: b.query<
-      { items: PublicUser[]; meta?: PageMeta },
-      {
-        page?: number;
-        limit?: number;
-        q?: string;
-        role?: Role;
-        status?: UserStatus;
-      } | void
-    >({
+    adminListUsers: b.query<AdminListUsersResult, AdminListUsersArgs | void>({
       query: (params) => ({ url: "/admin/users", params }),
-      transformResponse: (raw: unknown) => normalizeList<PublicUser>(raw),
-      providesTags: ["Users"],
+      transformResponse: (raw: ApiOk<PublicUser[]>) => ({
+        items: raw.data,
+        meta: toPager(raw.meta),
+      }),
+      providesTags: [{ type: "Users", id: "LIST" }],
     }),
 
     adminGetUser: b.query<PublicUser, string>({
@@ -51,12 +54,17 @@ export const userApi = baseApi.injectEndpoints({
 
     adminCreateUser: b.mutation<
       PublicUser,
-      { name: string; email: string; role: Role; password: string }
+      {
+        name: string;
+        email: string;
+        role: PublicUser["role"];
+        password: string;
+      }
     >({
       query: (body) => ({ url: "/admin/users", method: "POST", data: body }),
-      invalidatesTags: ["Users"],
+      transformResponse: (raw: ApiOk<PublicUser>) => raw.data,
+      invalidatesTags: [{ type: "Users", id: "LIST" }],
     }),
-
     adminUpdateUser: b.mutation<
       PublicUser,
       {
@@ -71,7 +79,8 @@ export const userApi = baseApi.injectEndpoints({
         method: "PATCH",
         data: patch,
       }),
-      invalidatesTags: ["Users"],
+      transformResponse: (raw: ApiOk<PublicUser>) => raw.data,
+      invalidatesTags: [{ type: "Users", id: "LIST" }],
     }),
   }),
 });

@@ -354,89 +354,258 @@ export default function Logo({
 ```
 
 ```javascript
+// src/components/layouts/AdminLayout.tsx
+import { Outlet } from "react-router-dom";
+
+export default function AdminLayout() {
+  return (
+    <div className="grid gap-4">
+      <Outlet />
+    </div>
+  );
+}
+```
+
+```javascript
 // src/components/layouts/AppNavbar.tsx
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import type { RootState } from "@/store/store";
 import { Button } from "@/components/ui/button";
-import { LogOutIcon } from "lucide-react";
+import { LogOutIcon, MenuIcon, UserIcon } from "lucide-react";
 import { useLogoutMutation } from "@/services/auth.api";
 import Logo from "../common/Logo";
+import * as React from "react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+
+function cx(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
 
 function linkCls({ isActive }: { isActive: boolean }) {
-  return [
+  return cx(
     "px-3 py-2 rounded-md text-sm font-medium transition",
     isActive
       ? "bg-accent text-accent-foreground"
       : "text-muted-foreground hover:text-foreground hover:bg-accent",
-  ].join(" ");
+  );
 }
 
 export default function AppNavbar() {
   const user = useSelector((s: RootState) => s.auth.user);
   const role = user?.role;
   const navigate = useNavigate();
+  const location = useLocation();
   const [logout, { isLoading }] = useLogoutMutation();
+  const inAdmin = location.pathname.startsWith("/admin");
+  const isAdmin = role === "admin";
 
-   const links = [
-    { to: "/student/dashboard", label: "Dashboard", show: true },
+  const links = [
+    { to: "/student/dashboard", label: "Dashboard", show: role === "student" },
     { to: "/student/exam/step/:n", label: "Exam", show: role === "student" },
     { to: "/student/exam/result", label: "Result", show: role === "student" },
     { to: "/student/certification", label: "Certificate", show: role === "student" },
-    { to: "/admin", label: "Admin", show: role === "admin" },
+    { to: "/admin/users", label: "Admin", show: isAdmin && !inAdmin },
     { to: "/supervisor", label: "Supervisor", show: role === "supervisor" },
   ].filter((l) => l.show);
 
+  const adminLinks = [
+    { to: "/admin/users", label: "Users" },
+    { to: "/admin/competencies", label: "Competencies" },
+    { to: "/admin/questions", label: "Questions" },
+    { to: "/admin/sessions", label: "Sessions" },
+    { to: "/admin/audit-logs", label: "Audit Logs" },
+    { to: "/admin/config", label: "Config" },
+  ];
+
   const onLogout = async () => {
     try {
-      await logout().unwrap(); // clears Redux auth in onQueryStarted
-      navigate("/login", { replace: true }); // send to login after server logout
+      await logout().unwrap();
+      navigate("/login", { replace: true });
     } catch {
-      // already handled by service/axios toasts if any
-      navigate("/login", { replace: true }); // hard-redirect anyway to be safe
+      navigate("/login", { replace: true });
     }
   };
 
-  return (
-    <header className="border-b bg-card">
-      <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
-        <Logo className="shrink-0" withText={false} />
-        {/* <div className="font-semibold">Test_School</div> */}
+  const [open, setOpen] = React.useState(false);
+  const close = () => setOpen(false);
 
-        <nav className="flex-1">
-          <ul className="flex items-center gap-1">
-            {links.map((l) => (
+  return (
+    <header className="sticky top-0 z-40 border-b bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+      <div className="mx-auto max-w-6xl px-3 sm:px-4">
+        {/* Top row */}
+        <div className="flex h-14 items-center gap-2">
+          {/* Left: hamburger (mobile) + logo (desktop only) */}
+          <div className="flex items-center gap-2">
+            <Sheet open={open} onOpenChange={setOpen}>
+  <SheetTrigger asChild>
+    <Button
+      variant="outline"
+      size="icon"
+      className="md:hidden"
+      aria-label="Open menu"
+    >
+      <MenuIcon className="h-5 w-5" />
+    </Button>
+  </SheetTrigger>
+
+  <SheetContent side="left" className="w-[86%] max-w-sm p-0 flex flex-col">
+     <SheetHeader className="px-4 py-3 text-left">
+                  <SheetTitle className="flex items-center gap-2">
+                    <Logo className="h-6 w-8 shrink-0" withText={false} />
+                    <span className="text-base font-semibold">Test School</span>
+                  </SheetTitle>
+                </SheetHeader>
+
+    {/* Mobile nav links */}
+    <nav className="px-2 pb-4 flex-1 overflow-y-auto">
+      <div className="px-2 py-1 text-xs font-semibold uppercase text-muted-foreground">
+        Navigation
+      </div>
+      <ul className="space-y-1 px-1">
+        {links.map((l) => (
+          <li key={l.to}>
+            <NavLink
+              to={l.to}
+              className={({ isActive }) =>
+                cx(
+                  "block rounded-md px-3 py-2 text-sm",
+                  isActive
+                    ? "bg-accent text-accent-foreground"
+                    : "text-foreground/80 hover:bg-accent",
+                )
+              }
+              onClick={close}
+            >
+              {l.label}
+            </NavLink>
+          </li>
+        ))}
+      </ul>
+
+      {isAdmin && inAdmin && (
+        <>
+          <div className="mt-4 px-2 py-1 text-xs font-semibold uppercase text-muted-foreground">
+            Admin
+          </div>
+          <ul className="space-y-1 px-1">
+            {adminLinks.map((l) => (
               <li key={l.to}>
-                <NavLink to={l.to} className={linkCls}>
+                <NavLink
+                  to={l.to}
+                  className={({ isActive }) =>
+                    cx(
+                      "block rounded-md px-3 py-2 text-sm",
+                      isActive
+                        ? "bg-accent text-accent-foreground"
+                        : "text-foreground/80 hover:bg-accent",
+                    )
+                  }
+                  onClick={close}
+                >
                   {l.label}
                 </NavLink>
               </li>
             ))}
           </ul>
-        </nav>
+        </>
+      )}
+    </nav>
 
-        {user ? (
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground">
-              {user.name} • {user.role}
-            </span>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onLogout}
-              disabled={isLoading}
-              aria-label="Log out"
-            >
-              <LogOutIcon className="mr-1" />
-              {isLoading ? "Logging out..." : "Logout"}
-            </Button>
+    {/* Bottom user block */}
+    {user && (
+      <div className="border-t px-3 py-4 flex items-center gap-2">
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+          <UserIcon className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
+          <div className="truncate font-medium">{user.name}</div>
+          <div className="truncate text-xs text-muted-foreground capitalize">
+            {user.role}
           </div>
+        </div>
+      </div>
+    )}
+  </SheetContent>
+</Sheet>
+
+
+            {/* Logo only on md+ (hidden on mobile to keep just burger+logout) */}
+            <div className="hidden md:block">
+              <Logo className="shrink-0" withText={false} />
+            </div>
+          </div>
+
+          {/* Center: desktop nav */}
+          <nav className="hidden flex-1 md:block">
+            <ul className="flex items-center gap-1">
+              {links.map((l) => (
+                <li key={l.to}>
+                  <NavLink to={l.to} className={linkCls}>
+                    {l.label}
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </nav>
+
+          {/* Right: actions */}
+          {user ? (
+            <>
+              {/* Desktop: name + logout (unchanged) */}
+              <div className="ml-auto hidden items-center gap-2 sm:gap-3 md:flex">
+                <span className="text-sm text-muted-foreground">
+                  {user.name} • <span className="capitalize">{user.role}</span>
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onLogout}
+                  disabled={isLoading}
+                  aria-label="Log out"
+                  className="gap-1"
+                >
+                  <LogOutIcon className="h-4 w-4 sm:mr-1" />
+                  <span>{isLoading ? "Logging out..." : "Logout"}</span>
+                </Button>
+              </div>
+
+              {/* Mobile: ONLY a logout icon — hidden while sheet is open */}
+              {!open && (
+                <div className="ml-auto md:hidden">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={onLogout}
+                    disabled={isLoading}
+                    aria-label="Log out"
+                  >
+                    <LogOutIcon className="h-5 w-5" />
+                  </Button>
+                </div>
+              )}
+            </>
+          ) : null}
+        </div>
+
+        {/* Admin subnav (desktop + tablet) */}
+        {isAdmin && inAdmin ? (
+          <nav aria-label="Admin section" className="hidden h-12 items-center md:flex pb-3">
+            <ul className="flex w-full gap-1">
+              {adminLinks.map((l) => (
+                <li key={l.to}>
+                  <NavLink to={l.to} className={linkCls}>
+                    {l.label}
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </nav>
         ) : null}
       </div>
     </header>
   );
 }
-
 
 ```
 
@@ -497,10 +666,190 @@ export default function PublicAuthLayout() {
 ```
 
 ```javascript
-// src/components/shared
+// src/components/shared/EmptyState.tsx
+export default function EmptyState({ label }: { label: string }) {
+  return (
+    <div className="border rounded-lg p-8 text-center text-muted-foreground">{label}</div>
+  );
+}
+
 ```
 
-```javascriptsrc/
+```javascript
+// src/components/shared/SearchBar.tsx
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { Input } from "@/components/ui/input";
+
+export default function SearchBar({ placeholder = "Search..." }: { placeholder?: string }) {
+  const [params, setParams] = useSearchParams();
+
+  // URL → local state
+  const urlQ = useMemo(() => params.get("q") ?? "", [params]);
+  const [q, setQ] = useState<string>(urlQ);
+
+  // keep local input in sync if URL q changes externally (back/forward etc.)
+  useEffect(() => {
+    setQ(urlQ);
+  }, [urlQ]);
+
+  // only reset page when *q* actually changes (debounced)
+  const prevAppliedQ = useRef<string>(urlQ);
+  useEffect(() => {
+    const id = setTimeout(() => {
+      if (q === prevAppliedQ.current) return; // nothing to do
+      const next = new URLSearchParams(window.location.search); // latest params
+      if (q) next.set("q", q);
+      else next.delete("q");
+      next.set("page", "1"); // reset page ONLY when q changed
+      prevAppliedQ.current = q;
+      setParams(next, { replace: true });
+    }, 350);
+    return () => clearTimeout(id);
+  }, [q, setParams]); // ⬅️ no `params` here
+
+  return (
+    <div className="w-full max-w-sm">
+      <Input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder={placeholder}
+      />
+    </div>
+  );
+}
+
+
+```
+
+```javascript
+// src/components/shared/TablePager.tsx
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
+
+export type PagerMeta = {
+  page: number;
+  limit: number;
+  total: number;
+  pageCount: number;
+};
+
+type Props = {
+  meta: PagerMeta;
+  onPageChange: (page: number) => void;
+  onLimitChange: (limit: number) => void;
+  pageSizeOptions?: number[];
+  sticky?: boolean;
+};
+
+export default function TablePager({
+  meta,
+  onPageChange,
+  onLimitChange,
+  pageSizeOptions = [10, 20, 50, 100],
+  sticky = false,
+}: Props) {
+  const { page, pageCount, limit, total } = meta;
+
+  return (
+    <div
+      className={[
+        "mt-2 grid items-center gap-3",
+        // 3 columns on mobile: results | arrows | size
+        "grid-cols-[auto_1fr_auto]",
+        // on sm and up, switch to row layout
+        "sm:flex sm:flex-row sm:items-center sm:justify-between",
+        // optional sticky footer
+        sticky
+          ? "sticky bottom-0 z-10 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 p-2"
+          : "",
+      ].join(" ")}
+    >
+      {/* Left: results (compact on mobile) */}
+      <div className="text-xs text-muted-foreground">
+        {/* Mobile: only the total */}
+        <span className="sm:hidden">
+          {Math.min(page * limit, total)} of {total} results
+        </span>
+        {/* Desktop: full description */}
+        <span className="hidden sm:inline">
+          Showing page <span className="font-medium">{page}</span> of{" "}
+          <span className="font-medium">{pageCount}</span> —{" "}
+          <span className="font-medium">{total}</span> results
+        </span>
+      </div>
+
+      {/* Middle: arrows (centered on mobile) */}
+      <div className="justify-self-center sm:order-none">
+        <Pagination>
+          <PaginationContent className="gap-1">
+            <PaginationItem>
+              <PaginationPrevious
+                href="#"
+                aria-label="Previous page"
+                title="Previous"
+                className="h-8 md:px-2"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onPageChange(Math.max(1, page - 1));
+                }}
+              />
+            </PaginationItem>
+
+            {/* Current page / count only on sm+ to save space */}
+            <span className=" text-sm md:px-2">{page}</span>
+
+            <PaginationItem>
+              <PaginationNext
+                href="#"
+                aria-label="Next page"
+                title="Next"
+                className="h-8 md:px-2"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onPageChange(Math.min(pageCount, page + 1));
+                }}
+              />
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
+      </div>
+
+      {/* Right: page size (label hidden on mobile) */}
+      <div className="justify-self-end sm:justify-self-auto sm:order-none">
+        <div className="flex items-center gap-2">
+          <span className="hidden text-xs text-muted-foreground sm:inline">Rows per page</span>
+          <Select value={String(limit)} onValueChange={(v) => onLimitChange(Number(v))}>
+            <SelectTrigger
+              className="h-8 w-[72px] text-sm"
+              aria-label="Rows per page"
+              title="Rows per page"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {pageSizeOptions.map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  {n}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+```
+
+```javascript
 // src/components/ui/alert.tsx
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
@@ -1544,7 +1893,1411 @@ export { Textarea }
 ```
 
 ```javascript
-// src/features/admin
+// src/features/admin/pages/UserPage.tsx
+import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import SearchBar from "@/components/shared/SearchBar";
+import EmptyState from "@/components/shared/EmptyState";
+import { useAdminListUsersQuery, useAdminCreateUserMutation, useAdminUpdateUserMutation, type PublicUser } from "@/services/user.api";
+import { toast } from "sonner";
+import { extractApiError } from "@/utils/extractApiError";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { usePagination } from "@/hooks/usePagination";
+import TablePager from "@/components/shared/TablePager";
+
+const RoleValues = ["admin", "student", "supervisor"] as const;
+const StatusValues = ["active", "disabled"] as const;
+
+export default function UsersPage() {
+  const [params, setParams] = useSearchParams();
+  const { page, limit, setPage, setLimit } = usePagination();
+  const q = params.get("q") ?? undefined;
+  const role = (params.get("role") ?? undefined) as "admin" | "student" | "supervisor" | undefined;
+  const status = (params.get("status") ?? undefined) as "active" | "disabled" | undefined;
+
+  const { data, isFetching } = useAdminListUsersQuery({ page, limit, q, role, status });
+  const items = data?.items ?? [];
+  const meta = data?.meta;
+
+  const setParam = (key: string, val?: string) => {
+    const next = new URLSearchParams(params);
+    if (val) next.set(key, val);
+    else next.delete(key);
+    next.set("page", "1");
+    setParams(next, { replace: true });
+  };
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="flex  justify-between gap-4 flex-col md:flex-row">
+        <CardTitle className="text-lg">Users</CardTitle>
+        <div className="flex flex-wrap md:flex-nowrap items-center gap-2">
+          <SearchBar placeholder="Search name/email..." />
+          <Select value={role} onValueChange={(v) => setParam("role", v === "all" ? undefined : v)}>
+            <SelectTrigger><SelectValue placeholder="Role" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All roles</SelectItem>
+              {RoleValues.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={status} onValueChange={(v) => setParam("status", v === "all" ? undefined : v)}>
+            <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All status</SelectItem>
+              {StatusValues.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <CreateUserDialog />
+        </div>
+      </CardHeader>
+    <CardContent className="grid gap-3">
+  <div className="rounded-lg border overflow-hidden">
+    {/* Horizontal scroll for narrow viewports */}
+    <div className="w-full overflow-x-auto">
+      {/* Vertical scroll area so header can stick */}
+      <div className="min-w-[720px] max-h-[70vh] overflow-y-auto">
+        {/* Sticky header */}
+        <div className="sticky top-0 z-10">
+          <div className="grid grid-cols-[2fr_2fr_1fr_1fr_1fr] gap-0 border-b bg-muted/80 backdrop-blur px-4 py-2 text-sm font-medium">
+            <div>Name</div>
+            <div>Email</div>
+            <div>Role</div>
+            <div>Status</div>
+            <div>Actions</div>
+          </div>
+        </div>
+
+        {/* Body */}
+        {isFetching ? (
+          Array.from({ length: 8 }).map((_, i) => (
+            <div
+              key={i}
+              className="grid grid-cols-[2fr_2fr_1fr_1fr_1fr] items-center gap-0 px-4 py-2"
+            >
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-4 w-1/2" />
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-8 w-24" />
+            </div>
+          ))
+        ) : items.length === 0 ? (
+          <div className="p-6">
+            <EmptyState label="No users found." />
+          </div>
+        ) : (
+          items.map((u, i) => <UserRow key={i} u={u} />)
+        )}
+      </div>
+    </div>
+  </div>
+
+  {!!meta && meta.pageCount > 1 && (
+    <TablePager meta={meta} onPageChange={setPage} onLimitChange={setLimit} />
+  )}
+</CardContent>
+
+    </Card>
+  );
+}
+
+function UserRow({ u }: { u: PublicUser }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="grid grid-cols-[2fr_2fr_1fr_1fr_1fr] items-center gap-0 border-t px-4 py-2 text-sm">
+      <div className="font-medium">{u.name}</div>
+      <div className="text-muted-foreground">{u.email}</div>
+      <div className="uppercase">{u.role}</div>
+      <div className="capitalize">{u.status ?? "-"}</div>
+      <div className="flex gap-2">
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild><Button variant="outline" size="sm">Edit</Button></DialogTrigger>
+          <EditUserDialog user={u} onClose={() => setOpen(false)} />
+        </Dialog>
+      </div>
+    </div>
+  );
+}
+
+const CreateSchema = z.object({
+  name: z.string().min(2),
+  email: z.string().email(),
+  role: z.enum(["admin", "student", "supervisor"]),
+  password: z.string().min(8),
+});
+type CreateValues = z.infer<typeof CreateSchema>;
+
+function CreateUserDialog() {
+  const [createUser, { isLoading }] = useAdminCreateUserMutation();
+  const { register, handleSubmit, formState: { errors }, reset, setValue } = useForm<CreateValues>({
+    resolver: zodResolver(CreateSchema), defaultValues: { name: "", email: "", role: "student", password: "" },
+  });
+
+  const onSubmit = async (v: CreateValues) => {
+    try {
+      await createUser(v).unwrap();
+      toast.success("User created");
+      reset();
+    } catch (e: unknown) {
+      toast.error(extractApiError(e));
+    }
+  };
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild><Button size="sm">New user</Button></DialogTrigger>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Create user</DialogTitle></DialogHeader>
+        <form className="grid gap-3" onSubmit={handleSubmit(onSubmit)}>
+          <div className="grid gap-1.5">
+            <Label htmlFor="name">Name</Label>
+            <Input id="name" {...register("name")} aria-invalid={!!errors.name} />
+            {errors.name?.message && <p className="text-sm text-destructive">{errors.name.message}</p>}
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="email">Email</Label>
+            <Input id="email" type="email" {...register("email")} aria-invalid={!!errors.email} />
+            {errors.email?.message && <p className="text-sm text-destructive">{errors.email.message}</p>}
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Role</Label>
+            <Select defaultValue="student" onValueChange={(v) => setValue("role", v as CreateValues["role"])}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {["admin","student","supervisor"].map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="password">Password</Label>
+            <Input id="password" type="password" {...register("password")} aria-invalid={!!errors.password} />
+            {errors.password?.message && <p className="text-sm text-destructive">{errors.password.message}</p>}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
+            <Button type="submit" disabled={isLoading}>{isLoading ? "Creating..." : "Create"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const EditSchema = z.object({
+  name: z.string().min(2).optional(),
+  role: z.enum(["admin","student","supervisor"]).optional(),
+  status: z.enum(["active","disabled"]).optional(),
+  password: z.string().optional(),
+});
+type EditValues = z.infer<typeof EditSchema>;
+
+function EditUserDialog({ user, onClose }: { user: PublicUser; onClose: () => void }) {
+  const [updateUser, { isLoading }] = useAdminUpdateUserMutation();
+  const { register, handleSubmit, formState: { errors }, setValue } = useForm<EditValues>({
+    resolver: zodResolver(EditSchema), defaultValues: { name: user.name, role: user.role, status: user.status },
+  });
+  console.log('user', user)
+
+  const onSubmit = async (v: EditValues) => {
+    try {
+      await updateUser({ id: user._id, patch: v }).unwrap();
+      toast.success("Updated");
+      onClose();
+    } catch (e: unknown) {
+      toast.error(extractApiError(e));
+    }
+  };
+
+  return (
+    <DialogContent>
+      <DialogHeader><DialogTitle>Edit user</DialogTitle></DialogHeader>
+      <form className="grid gap-3" onSubmit={handleSubmit(onSubmit)}>
+        <div className="grid gap-1.5">
+          <Label htmlFor="name">Name</Label>
+          <Input id="name" {...register("name")} aria-invalid={!!errors.name} />
+          {errors.name?.message && <p className="text-sm text-destructive">{errors.name.message}</p>}
+        </div>
+        <div className="grid gap-1.5">
+          <Label>Role</Label>
+          <Select defaultValue={user.role} onValueChange={(v) => setValue("role", v as EditValues["role"])}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {RoleValues.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="grid gap-1.5">
+          <Label>Status</Label>
+          <Select defaultValue={user.status ?? "active"} onValueChange={(v) => setValue("status", v as EditValues["status"])}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {StatusValues.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="password">New password (optional)</Label>
+          <Input id="password" type="password" {...register("password")} aria-invalid={!!errors.password} />
+          {errors.password?.message && <p className="text-sm text-destructive">{errors.password.message}</p>}
+        </div>
+        <DialogFooter>
+          <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
+          <Button type="submit" disabled={isLoading}>{isLoading ? "Saving..." : "Save"}</Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
+  );
+}
+
+```
+
+```javascript
+// src/features/admin/pages/CompetenciesPages.tsx
+import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import EmptyState from "@/components/shared/EmptyState";
+import SearchBar from "@/components/shared/SearchBar";
+import { useListCompetenciesQuery, useCreateCompetencyMutation, useUpdateCompetencyMutation, useDeleteCompetencyMutation, type ICompetency } from "@/services/competency.api";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
+import { extractApiError } from "@/utils/extractApiError";
+import { usePagination } from "@/hooks/usePagination";
+import TablePager from "@/components/shared/TablePager";
+
+export default function CompetenciesPage() {
+  const [params] = useSearchParams();
+   const { page, limit, setPage, setLimit } = usePagination();
+  const q = params.get("q") ?? undefined;
+
+  const { data,  isFetching } = useListCompetenciesQuery({ page, limit, q, sortBy: "createdAt", sortOrder: "desc" },
+     { refetchOnMountOrArgChange: true }
+  );
+  const items = data?.items ?? [];
+  const meta = data?.meta;
+
+  console.log('data', data)
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="flex md:items-center md:justify-between gap-4 flex-col md:flex-row">
+        <CardTitle className="text-lg">Competencies</CardTitle>
+        <div className="flex justify-between items-center gap-2 w-full md:justify-end">
+          <SearchBar placeholder="Search by name/code..." />
+          <CreateCompetencyDialog />
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+  <div className="rounded-lg border overflow-hidden">
+    <div className="w-full overflow-x-auto">
+      <div className="min-w-[700px] max-h-[70vh] overflow-y-auto">
+        {/* Sticky Header */}
+        <div className="sticky top-0 z-10">
+          <div className="grid grid-cols-[1.2fr_2fr_3fr_1fr] border-b bg-muted/80 backdrop-blur px-4 py-2 text-sm font-medium">
+            <div>Code</div>
+            <div>Name</div>
+            <div>Description</div>
+            <div>Actions</div>
+          </div>
+        </div>
+
+        {/* Table Body */}
+        {isFetching ? (
+          Array.from({ length: 8 }).map((_, i) => (
+            <div
+              key={i}
+              className="grid grid-cols-[1.2fr_2fr_3fr_1fr] items-center gap-0 px-4 py-2"
+            >
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-8 w-24" />
+            </div>
+          ))
+        ) : items.length === 0 ? (
+          <div className="p-6">
+            <EmptyState label="No competencies." />
+          </div>
+        ) : (
+          items.map((c) => <Row key={c._id} c={c} />)
+        )}
+      </div>
+    </div>
+  </div>
+
+  {meta && meta.pageCount > 1 && (
+    <TablePager meta={meta} onPageChange={setPage} onLimitChange={setLimit} />
+  )}
+</CardContent>
+
+    </Card>
+  );
+}
+
+function Row({ c }: { c: ICompetency }) {
+  const [open, setOpen] = useState(false);
+  const [remove, { isLoading: deleting }] = useDeleteCompetencyMutation();
+
+  const onDelete = async () => {
+    try {
+      await remove(c._id).unwrap();
+      toast.success("Deleted");
+    } catch (e: unknown) {
+      toast.error(extractApiError(e));
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-[1.2fr_2fr_3fr_1fr] items-center gap-0 border-t px-4 py-2 text-sm">
+      <div className="font-mono">{c.code}</div>
+      <div className="font-medium">{c.name}</div>
+      <div className="text-muted-foreground line-clamp-2">{c.description ?? "-"}</div>
+      <div className="flex gap-2">
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild><Button size="sm" variant="outline">Edit</Button></DialogTrigger>
+          <EditCompetencyDialog c={c} onClose={() => setOpen(false)} />
+        </Dialog>
+        <Button size="sm" variant="destructive" onClick={onDelete} disabled={deleting}>
+          {deleting ? "Deleting..." : "Delete"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+const Schema = z.object({ code: z.string().min(1), name: z.string().min(1), description: z.string().optional() });
+type Values = z.infer<typeof Schema>;
+
+function CreateCompetencyDialog() {
+  const [create, { isLoading }] = useCreateCompetencyMutation();
+  const { register, handleSubmit, formState: { errors }, reset } = useForm<Values>({
+    resolver: zodResolver(Schema), defaultValues: { code: "", name: "", description: "" },
+  });
+
+  const onSubmit = async (v: Values) => {
+    try {
+      await create(v).unwrap();
+      toast.success("Created");
+      reset();
+    } catch (e: unknown) {
+      toast.error(extractApiError(e));
+    }
+  };
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild><Button size="sm">New</Button></DialogTrigger>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Create competency</DialogTitle></DialogHeader>
+        <form className="grid gap-3" onSubmit={handleSubmit(onSubmit)}>
+          <div className="grid gap-1.5"><Label htmlFor="code">Code</Label><Input id="code" {...register("code")} aria-invalid={!!errors.code} />{errors.code?.message && <p className="text-sm text-destructive">{errors.code.message}</p>}</div>
+          <div className="grid gap-1.5"><Label htmlFor="name">Name</Label><Input id="name" {...register("name")} aria-invalid={!!errors.name} />{errors.name?.message && <p className="text-sm text-destructive">{errors.name.message}</p>}</div>
+          <div className="grid gap-1.5"><Label htmlFor="description">Description</Label><Input id="description" {...register("description")} /></div>
+          <DialogFooter>
+            <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
+            <Button type="submit" disabled={isLoading}>{isLoading ? "Creating..." : "Create"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditCompetencyDialog({ c, onClose }: { c: ICompetency; onClose: () => void }) {
+  const [update, { isLoading }] = useUpdateCompetencyMutation();
+  const { register, handleSubmit, formState: { errors } } = useForm<Values>({
+    resolver: zodResolver(Schema), defaultValues: { code: c.code, name: c.name, description: c.description ?? "" },
+  });
+
+  const onSubmit = async (v: Values) => {
+    try {
+      await update({ id: c._id, patch: v }).unwrap();
+      toast.success("Updated");
+      onClose();
+    } catch (e: unknown) {
+      toast.error(extractApiError(e));
+    }
+  };
+
+  return (
+    <DialogContent>
+      <DialogHeader><DialogTitle>Edit competency</DialogTitle></DialogHeader>
+      <form className="grid gap-3" onSubmit={handleSubmit(onSubmit)}>
+        <div className="grid gap-1.5"><Label htmlFor="code">Code</Label><Input id="code" {...register("code")} aria-invalid={!!errors.code} />{errors.code?.message && <p className="text-sm text-destructive">{errors.code.message}</p>}</div>
+        <div className="grid gap-1.5"><Label htmlFor="name">Name</Label><Input id="name" {...register("name")} aria-invalid={!!errors.name} />{errors.name?.message && <p className="text-sm text-destructive">{errors.name.message}</p>}</div>
+        <div className="grid gap-1.5"><Label htmlFor="description">Description</Label><Input id="description" {...register("description")} /></div>
+        <DialogFooter>
+          <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
+          <Button type="submit" disabled={isLoading}>{isLoading ? "Saving..." : "Save"}</Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
+  );
+}
+
+```
+
+```javascript
+// src/features/admin/pages/QuestionPage.tsx
+import { useEffect,  useRef,  useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import SearchBar from "@/components/shared/SearchBar";
+import EmptyState from "@/components/shared/EmptyState";
+import { useListQuestionsQuery, useCreateQuestionMutation, useUpdateQuestionMutation, useDeleteQuestionMutation, useImportQuestionsMutation, useExportQuestionsQuery, type IQuestion, type QuestionLevel, type CreateQuestionDto } from "@/services/question.api";
+import { useListCompetenciesQuery } from "@/services/competency.api";
+import { toast } from "sonner";
+import { extractApiError } from "@/utils/extractApiError";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { downloadBlob } from "@/utils/download";
+import { usePagination } from "@/hooks/usePagination";
+import TablePager from "@/components/shared/TablePager";
+
+const LevelValues: QuestionLevel[] = ["A1","A2","B1","B2","C1","C2"];
+
+export default function QuestionsPage() {
+  const [params, setParams] = useSearchParams();
+   const { page, limit, setPage, setLimit } = usePagination();
+  const q = params.get("q") ?? undefined;
+  const level = (params.get("level") ?? undefined) as QuestionLevel | undefined;
+  const competencyId = params.get("competencyId") ?? undefined;
+
+  const { data: comps } = useListCompetenciesQuery({ limit: 100 });
+
+    const { data, isFetching } = useListQuestionsQuery(
+    { page, limit, q, level, competencyId, sortBy: "createdAt", sortOrder: "desc" },
+    { refetchOnMountOrArgChange: true }
+  );
+
+  const items = data?.items ?? [];
+  const meta = data?.meta;
+
+  const setParam = (key: string, val?: string) => {
+    const next = new URLSearchParams(params);
+    if (val) next.set(key, val);
+    else next.delete(key);
+    next.set("page", "1");
+    setParams(next, { replace: true });
+  };
+
+  // Export (lazy-ish via skip toggle)
+  const [doExport, setDoExport] = useState(false);
+  const { data: exportBlob, isFetching: isExporting } = useExportQuestionsQuery(undefined, { skip: !doExport });
+  useEffect(() => {
+    if (doExport && exportBlob) {
+      downloadBlob(exportBlob, "questions.csv");
+      setDoExport(false);
+      toast.success("Export started");
+    }
+  }, [doExport, exportBlob]);
+
+  return (
+    <Card className="bg-card border-border w-full">
+      {/* Small screens */}
+<CardHeader className="block md:hidden w-full space-y-3">
+  {/* Row 1: Title */}
+  <CardTitle className="text-lg">Questions</CardTitle>
+
+  {/* Row 2: Search | Level | Competency */}
+  <div className="flex justify-around items-center gap-2">
+    <SearchBar placeholder="Search prompt..." />
+    <Select
+      value={level}
+      onValueChange={(v) => setParam("level", v === "all" ? undefined : v)}
+    >
+      <SelectTrigger><SelectValue placeholder="Level" /></SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All levels</SelectItem>
+        {LevelValues.map((lv) => (
+          <SelectItem key={lv} value={lv}>{lv}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+
+    <Select
+      value={competencyId}
+      onValueChange={(v) => setParam("competencyId", v === "all" ? undefined : v)}
+    >
+      <SelectTrigger><SelectValue placeholder="Competency" /></SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All competencies</SelectItem>
+        {(comps?.items ?? []).map((c) => (
+          <SelectItem key={c._id} value={c._id}>
+            {c.code} — {c.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  </div>
+
+  {/* Row 3: New | Import CSV | Export CSV */}
+  <div className="flex justify-around items-center gap-2">
+    <CreateQuestionDialog />
+    <ImportButton />
+    <Button
+      variant="outline"
+      onClick={() => setDoExport(true)}
+      disabled={isExporting}
+    >
+      {isExporting ? "Exporting..." : "Export CSV"}
+    </Button>
+  </div>
+</CardHeader>
+
+{/* Medium+ screens */}
+<CardHeader className="hidden md:flex  flex-col justify-between items-start gap-3 ">
+  {/* Row 1: Title | Search | Level | Competency */}
+  <div className="flex justify-between items-center w-full gap-4">
+    <CardTitle className="text-lg whitespace-nowrap flex-2/6">Questions</CardTitle>
+    <div className="flex flex-4/6 items-center justify-end gap-2">
+      <SearchBar placeholder="Search prompt..." />
+      <Select
+        value={level}
+        onValueChange={(v) => setParam("level", v === "all" ? undefined : v)}
+      >
+        <SelectTrigger><SelectValue placeholder="Level" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All levels</SelectItem>
+          {LevelValues.map((lv) => (
+            <SelectItem key={lv} value={lv}>{lv}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <Select
+        value={competencyId}
+        onValueChange={(v) => setParam("competencyId", v === "all" ? undefined : v)}
+      >
+        <SelectTrigger><SelectValue placeholder="Competency" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All competencies</SelectItem>
+          {(comps?.items ?? []).map((c) => (
+            <SelectItem key={c._id} value={c._id}>
+              {c.code} — {c.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  </div>
+
+  {/* Row 2: New | Import CSV | Export CSV */}
+  <div className="flex items-center gap-2">
+    <CreateQuestionDialog />
+    <ImportButton />
+    <Button
+      variant="outline"
+      onClick={() => setDoExport(true)}
+      disabled={isExporting}
+    >
+      {isExporting ? "Exporting..." : "Export CSV"}
+    </Button>
+  </div>
+</CardHeader>
+
+
+      <CardContent className="grid gap-3">
+  <div className="rounded-lg border overflow-hidden">
+    <div className="w-full overflow-x-auto">
+      <div className="min-w-[700px] max-h-[70vh] overflow-y-auto">
+        {/* Sticky Header */}
+        <div className="sticky top-0 z-10">
+          <div className="grid grid-cols-[1fr_3fr_1fr_1fr_1fr] border-b bg-muted/80 backdrop-blur px-4 py-2 text-sm font-medium gap-3">
+            <div>Competency</div>
+            <div>Prompt</div>
+            <div>Level</div>
+            <div>Active</div>
+            <div>Actions</div>
+          </div>
+        </div>
+
+        {/* Table Body */}
+        {isFetching ? (
+          Array.from({ length: 8 }).map((_, i) => (
+            <div
+              key={i}
+              className="grid grid-cols-[1fr_3fr_1fr_1fr_1fr] items-center gap-0 px-4 py-2"
+            >
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-4 w-12" />
+              <Skeleton className="h-4 w-10" />
+              <Skeleton className="h-8 w-24" />
+            </div>
+          ))
+        ) : items.length === 0 ? (
+          <div className="p-6">
+            <EmptyState label="No questions yet." />
+          </div>
+        ) : (
+          items.map((q) => <Row key={q._id} q={q} />)
+        )}
+      </div>
+    </div>
+  </div>
+
+  {meta && meta.pageCount > 1 && (
+    <TablePager meta={meta} onPageChange={setPage} onLimitChange={setLimit} />
+  )}
+</CardContent>
+
+    </Card>
+  );
+}
+
+function Row({ q }: { q: IQuestion }) {
+  const [open, setOpen] = useState(false);
+  const [remove, { isLoading: deleting }] = useDeleteQuestionMutation();
+  const onDelete = async () => {
+    try {
+      await remove(q._id).unwrap();
+      toast.success("Deleted");
+    } catch (e: unknown) {
+      toast.error(extractApiError(e));
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-[1fr_3fr_1fr_1fr_1fr] items-center gap-3 border-t px-4 py-2 text-sm">
+      <div className="font-mono">{q.competencyId.name}</div>
+      <div className="line-clamp-2 truncate">{q.prompt}</div>
+      <div>{q.level}</div>
+      <div>{q.isActive ? "Yes" : "No"}</div>
+      <div className="flex gap-2">
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild><Button variant="outline" size="sm">Edit</Button></DialogTrigger>
+          <EditQuestionDialog q={q} onClose={() => setOpen(false)} />
+        </Dialog>
+        <Button variant="destructive" size="sm" onClick={onDelete} disabled={deleting}>
+          {deleting ? "Deleting..." : "Delete"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+const QuestionSchema = z.object({
+  competencyId: z.string().min(1),
+  level: z.enum(["A1","A2","B1","B2","C1","C2"]),
+  prompt: z.string().min(1),
+  options: z.array(z.string().min(1)).length(4),
+  correctIndex: z.number().int().min(0).max(3),
+  isActive: z.boolean().default(true),
+});
+type QuestionForm = z.input<typeof QuestionSchema>;
+
+
+function CreateQuestionDialog() {
+  const [create, { isLoading }] = useCreateQuestionMutation();
+  const { data: comps } = useListCompetenciesQuery({ limit: 100 });
+
+  const {  register, handleSubmit, formState: { errors }, setValue, reset } =
+  useForm<QuestionForm>({
+    resolver: zodResolver(QuestionSchema),
+    defaultValues: {
+      competencyId: "",
+      level: "A1",
+      prompt: "",
+      options: ["", "", "", ""],
+      correctIndex: 0,
+      isActive: true,
+    },
+  });
+
+
+
+
+// type CreateQuestionInput = Omit<IQuestion, "_id" | "createdAt" | "updatedAt">;
+
+const onSubmit = async (v: QuestionForm) => {
+  const payload: CreateQuestionDto  = {
+    competencyId: v.competencyId,
+    level: v.level,
+    prompt: v.prompt,
+    options: v.options,
+    correctIndex: v.correctIndex,
+    isActive: v.isActive ?? true,
+  };
+
+  try {
+    await create(payload).unwrap();
+    toast.success("Created");
+    reset();
+  } catch (e: unknown) {
+    toast.error(extractApiError(e));
+  }
+};
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild><Button size="sm">New</Button></DialogTrigger>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader><DialogTitle>Create question</DialogTitle></DialogHeader>
+        <form className="grid gap-3" onSubmit={handleSubmit(onSubmit)}>
+          <div className="grid gap-1.5">
+            <Label>Competency</Label>
+            <Select onValueChange={(v) => setValue("competencyId", v)}>
+              <SelectTrigger><SelectValue placeholder="Select competency" /></SelectTrigger>
+              <SelectContent>
+                {(comps?.items ?? []).map((c) => <SelectItem key={c._id} value={c._id}>{c.code} — {c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {errors.competencyId?.message && <p className="text-sm text-destructive">{errors.competencyId.message}</p>}
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Level</Label>
+            <Select defaultValue="A1" onValueChange={(v) => setValue("level", v as QuestionForm["level"])}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>{["A1","A2","B1","B2","C1","C2"].map((lv) => <SelectItem key={lv} value={lv}>{lv}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="prompt">Prompt</Label>
+            <Input id="prompt" {...register("prompt")} aria-invalid={!!errors.prompt} />
+            {errors.prompt?.message && <p className="text-sm text-destructive">{errors.prompt.message}</p>}
+          </div>
+          <div className="grid gap-2">
+            <Label>Options</Label>
+             {[0, 1, 2, 3].map((i) => (
+    <div key={i} className="flex items-center gap-2">
+                <span className="rounded border px-2 py-1 text-xs">{String.fromCharCode(65 + i)}</span>
+                <Input {...register(`options.${i}`)} aria-invalid={!!errors.options?.[i]} />
+              </div>
+            ))}
+            {typeof errors.correctIndex?.message === "string" && <p className="text-sm text-destructive">{errors.correctIndex.message}</p>}
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Correct answer</Label>
+            <Select defaultValue="0" onValueChange={(v) => setValue("correctIndex", Number(v))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {[0,1,2,3].map((i) => <SelectItem key={i} value={String(i)}>{String.fromCharCode(65 + i)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
+            <Button type="submit" disabled={isLoading}>{isLoading ? "Creating..." : "Create"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditQuestionDialog({ q, onClose }: { q: IQuestion; onClose: () => void }) {
+  const [update, { isLoading }] = useUpdateQuestionMutation();
+  const { register, handleSubmit, formState: { errors }, setValue } = useForm<QuestionForm>({
+    resolver: zodResolver(QuestionSchema),
+    defaultValues: {
+      competencyId:  q.competencyId._id, level: q.level, prompt: q.prompt,
+      options: q.options, correctIndex: q.correctIndex, isActive: q.isActive,
+    },
+  });
+
+  const onSubmit = async (v: QuestionForm) => {
+    try {
+      await update({ id: q._id, patch: v }).unwrap();
+      toast.success("Updated");
+      onClose();
+    } catch (e: unknown) {
+      toast.error(extractApiError(e));
+    }
+  };
+
+  return (
+    <DialogContent className="max-w-2xl">
+      <DialogHeader><DialogTitle>Edit question</DialogTitle></DialogHeader>
+      <form className="grid gap-3" onSubmit={handleSubmit(onSubmit)}>
+        <div className="grid gap-1.5"><Label htmlFor="prompt">Prompt</Label><Input id="prompt" {...register("prompt")} aria-invalid={!!errors.prompt} /></div>
+        <div className="grid gap-1.5">
+          <Label>Level</Label>
+          <Select defaultValue={q.level} onValueChange={(v) => setValue("level", v as QuestionForm["level"])}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>{LevelValues.map((lv) => <SelectItem key={lv} value={lv}>{lv}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <div className="grid gap-2">
+          <Label>Options</Label>
+          {q.options.map((opt, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <span className="rounded border px-2 py-1 text-xs">{String.fromCharCode(65 + i)}</span>
+              <Input defaultValue={opt} onChange={(e) => setValue(`options.${i}`, e.target.value)} />
+            </div>
+          ))}
+        </div>
+        <div className="grid gap-1.5">
+          <Label>Correct answer</Label>
+          <Select defaultValue={String(q.correctIndex)} onValueChange={(v) => setValue("correctIndex", Number(v))}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>{[0,1,2,3].map((i) => <SelectItem key={i} value={String(i)}>{String.fromCharCode(65 + i)}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <DialogFooter>
+          <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
+          <Button type="submit" disabled={isLoading}>{isLoading ? "Saving..." : "Save"}</Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
+  );
+}
+
+function ImportButton() {
+  const [importCsv, { isLoading }] = useImportQuestionsMutation();
+   const fileRef = useRef<HTMLInputElement>(null);
+  const [inputKey, setInputKey] = useState(0);
+
+ const openPicker = () => {
+    const el = fileRef.current;
+    if (!el) return;
+    // Ensure onChange will fire even if user picks the same file
+    el.value = "";
+    el.click();
+  };
+
+  const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return; // user canceled; nothing to upload
+    try {
+      await importCsv({ file, mode: "upsert" }).unwrap();
+      toast.success("Imported");
+    } catch (err: unknown) {
+      toast.error(extractApiError(err));
+    } finally {
+      // Clear again after a successful/failed upload
+      if (fileRef.current) fileRef.current.value = "";
+      // Optional: hard reset the input node in some stubborn browsers
+      setInputKey((k) => k + 1);
+    }
+  };
+
+ return (
+    <div className="inline-flex items-center gap-2">
+      <Button variant="outline" onClick={openPicker} disabled={isLoading}>
+        {isLoading ? "Importing..." : "Import CSV"}
+      </Button>
+      <input
+        key={inputKey}
+        ref={fileRef}
+        type="file"
+        accept=".csv,text/csv"
+        className="sr-only"
+        onChange={onPick}
+      />
+    </div>
+  );
+}
+
+```
+
+```javascript
+// src/features/admin/pages/SessionsPage.tsx
+import { useSearchParams } from "react-router-dom";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import SearchBar from "@/components/shared/SearchBar";
+import EmptyState from "@/components/shared/EmptyState";
+import { useListSessionsQuery, type AdminSession } from "@/services/admin.api";
+import { usePagination } from "@/hooks/usePagination";
+import TablePager from "@/components/shared/TablePager";
+
+// helpers to safely read id / user name from mixed shapes
+type RawUser = { _id?: string; name?: string };
+type RawSession = { _id?: string; userId?: RawUser } & Partial<AdminSession>;
+
+function getSessionId(s: AdminSession | RawSession): string {
+  if ("id" in s && typeof s.id === "string") return s.id;
+  if ("_id" in s && typeof s._id === "string") return s._id;
+  return "—";
+}
+
+function getUserName(s: AdminSession | RawSession): string {
+  if ("user" in s && s.user) return s.user.name ?? s.user.id ?? "—";
+  if ("userId" in s && s.userId) return s.userId.name ?? s.userId._id ?? "—";
+  return "—";
+}
+
+export default function SessionsPage() {
+  const [params, setParams] = useSearchParams();
+  const { page, limit, setPage, setLimit } = usePagination();
+
+  const q = params.get("q") ?? undefined;
+
+  const status = (params.get("status") ?? undefined) as
+    | AdminSession["status"]
+    | undefined;
+  const step = (params.get("step") ?? undefined) as "1" | "2" | "3" | undefined;
+
+  const { data, isFetching } = useListSessionsQuery(
+    {
+      page,
+      limit,
+      q,
+      status: status as AdminSession["status"],
+      step: step ? (Number(step) as 1 | 2 | 3) : undefined,
+    },
+    { refetchOnMountOrArgChange: true }
+  );
+
+  const items = data?.items ?? [];
+  const meta = data?.meta;
+
+  const setParam = (key: string, val?: string) => {
+    const next = new URLSearchParams(params);
+    if (val) next.set(key, val);
+    else next.delete(key);
+    next.set("page", "1");
+    setParams(next, { replace: true });
+  };
+
+  return (
+    <Card className="bg-card border-border">
+   {/* Small screens */}
+<CardHeader className="block md:hidden w-full space-y-3">
+  {/* Row 1: Title + Search */}
+  <div className="flex items-center justify-between gap-2">
+    <CardTitle className="text-lg whitespace-nowrap flex-2/5">Sessions</CardTitle>
+    <div className="flex-3/5">
+      <SearchBar placeholder="Search by user/session..." />
+    </div>
+  </div>
+
+  {/* Row 2: Filters */}
+  <div className="flex gap-2 justify-start">
+    <Select
+      value={status}
+      onValueChange={(v) => setParam("status", v === "all" ? undefined : v)}
+    >
+      <SelectTrigger>
+        <SelectValue placeholder="Status" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All</SelectItem>
+        {["pending", "active", "submitted", "cancelled"].map((s) => (
+          <SelectItem key={s} value={s}>
+            {s}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+
+    <Select
+      value={step}
+      onValueChange={(v) => setParam("step", v === "all" ? undefined : v)}
+    >
+      <SelectTrigger>
+        <SelectValue placeholder="Step" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All</SelectItem>
+        {["1", "2", "3"].map((s) => (
+          <SelectItem key={s} value={s}>
+            Step {s}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  </div>
+</CardHeader>
+
+{/* Large screens */}
+<CardHeader className="hidden md:flex w-full items-center justify-between gap-4">
+  <CardTitle className="text-lg whitespace-nowrap">Sessions</CardTitle>
+
+  <div className="flex items-center gap-2 flex-1 justify-end">
+    <div className="w-64">
+      <SearchBar placeholder="Search by user/session..." />
+    </div>
+
+    <Select
+      value={status}
+      onValueChange={(v) => setParam("status", v === "all" ? undefined : v)}
+    >
+      <SelectTrigger>
+        <SelectValue placeholder="Status" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All</SelectItem>
+        {["pending", "active", "submitted", "cancelled"].map((s) => (
+          <SelectItem key={s} value={s}>
+            {s}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+
+    <Select
+      value={step}
+      onValueChange={(v) => setParam("step", v === "all" ? undefined : v)}
+    >
+      <SelectTrigger>
+        <SelectValue placeholder="Step" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All</SelectItem>
+        {["1", "2", "3"].map((s) => (
+          <SelectItem key={s} value={s}>
+            Step {s}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  </div>
+</CardHeader>
+
+
+
+
+
+      <CardContent className="grid gap-3">
+        <div className="rounded-lg border overflow-hidden">
+          <div className="w-full overflow-x-auto">
+            <div className="min-w-[720px] max-h-[70vh] overflow-y-auto">
+              {/* Sticky header */}
+              <div className="sticky top-0 z-15">
+                <div className="grid grid-cols-[2fr_2fr_1fr_1fr_1fr] border-b bg-muted/70 backdrop-blur px-4 py-2 text-sm font-medium">
+                  <div>Session ID</div>
+                  <div>User</div>
+                  <div>Status</div>
+                  <div>Step</div>
+                  <div>Video Chunks</div>
+                </div>
+              </div>
+
+              {isFetching ? (
+                Array.from({ length: 8 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="grid grid-cols-[2fr_2fr_1fr_1fr_1fr] items-center gap-0 px-4 py-2"
+                  >
+                    <Skeleton className="h-6 w-48" />
+                    <Skeleton className="h-6 w-40" />
+                    <Skeleton className="h-6 w-16" />
+                    <Skeleton className="h-6 w-12" />
+                    <Skeleton className="h-6 w-12" />
+                  </div>
+                ))
+              ) : items.length === 0 ? (
+                <div className="p-6">
+                  <EmptyState label="No sessions found." />
+                </div>
+              ) : (
+                items.map((s) => {
+                  const id = getSessionId(s as AdminSession | RawSession);
+                  const userName = getUserName(s as AdminSession | RawSession);
+                  return (
+                    <div
+                      key={s.id}
+                      className="grid grid-cols-[2fr_2fr_1fr_1fr_1fr] items-center gap-0 border-t px-4 py-2 text-sm"
+                    >
+                      <div className="font-mono truncate">{id}</div>
+                      <div className="truncate">{userName}</div>
+                      <div className="capitalize">{s.status}</div>
+                      <div>{s.step}</div>
+                      <div>{s.videoRecordingMeta?.chunks ?? 0}</div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+        {meta && meta.pageCount > 1 && (
+          <TablePager
+            meta={meta}
+            onPageChange={setPage}
+            onLimitChange={setLimit}
+          />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+```
+
+```javascript
+// src/features/admin/pages/AuditLogsPage.tsx
+import { useSearchParams } from "react-router-dom";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import SearchBar from "@/components/shared/SearchBar";
+import EmptyState from "@/components/shared/EmptyState";
+import { useListAuditLogsQuery } from "@/services/admin.api";
+import { usePagination } from "@/hooks/usePagination";
+import TablePager from "@/components/shared/TablePager";
+
+type ActorObj =
+  | { id: string; name?: string; email?: string; role?: string }
+  | null
+  | undefined;
+
+type RawLog = {
+  _id?: string;
+  id?: string;
+  action: string;
+  resource?: string | null;
+  resourceId?: string | null;
+  message?: string | null; // still allowed in payload but no longer displayed
+  createdAt: string;
+  actor?: ActorObj | string | null;
+};
+
+function actorName(a: ActorObj | string | null | undefined): string {
+  if (!a) return "-";
+  if (typeof a === "string") return a || "-";
+  return a.name ?? a.id ?? "-";
+}
+function actorRole(a: ActorObj | string | null | undefined): string {
+  if (!a || typeof a === "string") return "-";
+  return a.role ?? "-";
+}
+function actorEmail(a: ActorObj | string | null | undefined): string {
+  if (!a || typeof a === "string") return "-";
+  return a.email ?? "-";
+}
+
+function resourceLabel(
+  resource?: string | null,
+  resourceId?: string | null
+): string {
+  if (!resource && !resourceId) return "-";
+  if (!resource) return resourceId ?? "-";
+  if (!resourceId) return resource;
+  const short =
+    resourceId.length > 8 ? `${resourceId.slice(0, 6)}…` : resourceId;
+  return `${resource} · ${short}`;
+}
+
+export default function AuditLogsPage() {
+  const [params] = useSearchParams();
+  const { page, limit, setPage, setLimit } = usePagination();
+
+  const q = params.get("q") ?? undefined;
+
+  const { data, isFetching } = useListAuditLogsQuery(
+    { page, limit, q },
+    { refetchOnMountOrArgChange: true }
+  );
+
+  const items = (data?.items ?? []) as ReadonlyArray<RawLog>;
+
+  const meta = data?.meta;
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="flex items-center justify-between gap-4 ">
+        <CardTitle className="text-lg flex-3/4">Audit Logs</CardTitle>
+        <SearchBar placeholder="Search logs..." />
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <div className="rounded-lg border overflow-hidden">
+          <div className="w-full overflow-x-auto">
+            <div className="min-w-[800px] max-h-[70vh] overflow-y-auto">
+        {/* Table header (sticky) */}
+        <div className="sticky top-0 z-10">
+          <div className="grid grid-cols-[1.6fr_1fr_1.8fr_1.6fr_1.4fr_1.4fr] border-b bg-muted/80 backdrop-blur px-4 py-2 text-sm font-medium">
+            <div>Actor</div>
+            <div>Role</div>
+            <div>Email</div>
+            <div>Action</div>
+            <div>Resource</div>
+            <div>Created at</div>
+          </div>
+        </div>
+
+        {/* Table body */}
+        {isFetching ? (
+          Array.from({ length: 8 }).map((_, i) => (
+            <div
+              key={i}
+              className="grid grid-cols-[1.6fr_1fr_1.8fr_1.6fr_1.4fr_1.4fr] items-center gap-0 px-4 py-2"
+            >
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-4 w-44" />
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-4 w-32" />
+            </div>
+          ))
+        ) : items.length === 0 ? (
+          <div className="p-6">
+            <EmptyState label="No logs found." />
+          </div>
+        ) : (
+          items.map((a) => {
+            const key = (a._id ?? a.id) as string;
+            const created = new Date(a.createdAt).toLocaleString();
+            return (
+              <div
+                key={key}
+                className="grid grid-cols-[1.6fr_1fr_1.8fr_1.6fr_1.4fr_1.4fr] items-center gap-0 border-t px-4 py-2 text-sm"
+              >
+                <div className="truncate">{actorName(a.actor)}</div>
+                <div className="truncate capitalize">{actorRole(a.actor)}</div>
+                <div className="truncate">{actorEmail(a.actor)}</div>
+                <div className="font-mono truncate">{a.action}</div>
+                <div className="truncate">{resourceLabel(a.resource)}</div>
+                <div className="text-muted-foreground">{created}</div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  </div>
+
+        {meta && meta.pageCount > 1 && (
+          <TablePager
+            meta={meta}
+            onPageChange={setPage}
+            onLimitChange={setLimit}
+          />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+```
+
+```javascript
+// src/features/admin/pages/ConfigPage.tsx
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useGetConfigQuery, useUpdateConfigMutation } from "@/services/admin.api";
+import { z } from "zod";
+import { useForm, type SubmitHandler } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
+
+
+const Schema = z.object({
+  timePerQuestionSec: z.coerce.number().int().min(10).max(600),
+  retakeLockMinutes: z.coerce.number().int().min(0).max(24 * 60),
+  maxRetakes: z.coerce.number().int().min(0).max(10),
+  sebMode: z.enum(["enforce", "warn", "off"]),
+});
+
+// 2) Use input/output helpers
+type FormInput = z.input<typeof Schema>;   // what RHF expects (can be strings/unknown before coercion)
+type FormOutput = z.output<typeof Schema>; // what your API needs (numbers after coercion)
+
+
+export default function ConfigPage() {
+  const { data, isFetching } = useGetConfigQuery();
+  const [update, { isLoading }] = useUpdateConfigMutation();
+
+  const cfg = data ?? undefined;
+
+const { register, handleSubmit, formState: { errors }, setValue } = useForm<FormInput>({
+    resolver: zodResolver(Schema), // resolver is typed as Resolver<input, any, output>
+    values: cfg
+      ? {
+          // values can be numbers (that’s fine for an 'unknown' input)
+          timePerQuestionSec: cfg.timePerQuestionSec,
+          retakeLockMinutes: cfg.retakeLockMinutes,
+          maxRetakes: cfg.maxRetakes,
+          sebMode: cfg.sebMode,
+        }
+      : undefined,
+  });
+
+    const onSubmit: SubmitHandler<FormInput> = async (raw) => {
+    const v: FormOutput = Schema.parse(raw); // now v has proper numbers
+    await update(v).unwrap();
+    toast.success("Config updated");
+  };
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader><CardTitle className="text-lg">System Config</CardTitle></CardHeader>
+      <CardContent>
+        {isFetching && !cfg ? (
+          <div className="grid gap-3 max-w-lg">
+            <Skeleton className="h-8 w-56" /><Skeleton className="h-9 w-full" />
+            <Skeleton className="h-8 w-56" /><Skeleton className="h-9 w-full" />
+            <Skeleton className="h-8 w-56" /><Skeleton className="h-9 w-full" />
+            <Skeleton className="h-8 w-56" /><Skeleton className="h-9 w-full" />
+          </div>
+        ) : cfg ? (
+          <form className="grid max-w-lg gap-4" onSubmit={handleSubmit(onSubmit)}>
+            <div className="grid gap-1.5">
+              <Label htmlFor="timePerQuestionSec">Time per question (sec)</Label>
+              <Input id="timePerQuestionSec" inputMode="numeric" {...register("timePerQuestionSec")} aria-invalid={!!errors.timePerQuestionSec} />
+              {errors.timePerQuestionSec?.message && <p className="text-sm text-destructive">{errors.timePerQuestionSec.message}</p>}
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="retakeLockMinutes">Retake lock (minutes)</Label>
+              <Input id="retakeLockMinutes" inputMode="numeric" {...register("retakeLockMinutes")} aria-invalid={!!errors.retakeLockMinutes} />
+              {errors.retakeLockMinutes?.message && <p className="text-sm text-destructive">{errors.retakeLockMinutes.message}</p>}
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="maxRetakes">Max retakes</Label>
+              <Input id="maxRetakes" inputMode="numeric" {...register("maxRetakes")} aria-invalid={!!errors.maxRetakes} />
+              {errors.maxRetakes?.message && <p className="text-sm text-destructive">{errors.maxRetakes.message}</p>}
+            </div>
+            <div className="grid gap-1.5">
+              <Label>SEB mode</Label>
+              <Select defaultValue={cfg.sebMode}  onValueChange={(v) => setValue("sebMode", v as FormInput["sebMode"])}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="enforce">enforce</SelectItem>
+                  <SelectItem value="warn">warn</SelectItem>
+                  <SelectItem value="off">off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="pt-2">
+              <Button type="submit" disabled={isLoading}>{isLoading ? "Saving..." : "Save"}</Button>
+            </div>
+          </form>
+        ) : (
+          <div className="text-sm text-destructive">Could not load config.</div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 ```
 
 ```javascript
@@ -1552,17 +3305,17 @@ export { Textarea }
 import type { Role } from "@/types/user";
 
 export function defaultRouteForRole(role: Role): string {
-   switch (role) {
+  switch (role) {
     case "admin":
       return "/admin";
     case "supervisor":
       return "/supervisor";
     case "student":
+      return "/student/dashboard";
     default:
       return "/dashboard";
   }
 }
-
 
 ```
 
@@ -1626,8 +3379,6 @@ import type { RootState } from "@/store/store";
 import { defaultRouteForRole } from "../route-helpers";
 import type { Role } from "@/types/user";
 
-
-
 const Schema = z.object({
   email: z.email(),
   password: z.string().min(8, "Password must be at least 8 characters"),
@@ -1636,7 +3387,7 @@ type FormValues = z.infer<typeof Schema>;
 
 export default function LoginPage() {
   const navigate = useNavigate();
-    const role = useSelector((s: RootState) => s.auth.user?.role ?? null);
+  const role = useSelector((s: RootState) => s.auth.user?.role ?? null);
 
 
 
@@ -1654,13 +3405,14 @@ export default function LoginPage() {
     try {
       const res = await login(values).unwrap();
       toast.success("Logged in");
+      console.log('res',res)
       const to = defaultRouteForRole(res.user.role);
       navigate(to, { replace: true });
     } catch (e: unknown) {
       toast.error(extractApiError(e));
     }
   };
-// ✅ declarative redirect — NO navigate() during render
+  // ✅ declarative redirect — NO navigate() during render
   if (role) {
     return <Navigate to={defaultRouteForRole(role as Role)} replace />;
   }
@@ -2086,7 +3838,44 @@ export default function ResetPasswordPage() {
 ```
 
 ```javascript
-// src/hooks
+// src/hooks/usePagination.ts
+import { useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
+
+function toInt(v: string | null, fallback: number): number {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+export function usePagination(defaultLimit = 10) {
+  const [params, setParams] = useSearchParams();
+
+  const page = toInt(params.get("page"), 1);
+  const limit = toInt(params.get("limit"), defaultLimit);
+
+  const setPage = useCallback(
+    (p: number) => {
+      const next = new URLSearchParams(params);
+      next.set("page", String(Math.max(1, p)));
+      setParams(next, { replace: true });
+    },
+    [params, setParams]
+  );
+
+  const setLimit = useCallback(
+    (l: number) => {
+      const next = new URLSearchParams(params);
+      next.set("limit", String(Math.max(1, l)));
+      next.set("page", "1"); // reset to first page on page-size change
+      setParams(next, { replace: true });
+    },
+    [params, setParams]
+  );
+
+  return { page, limit, setPage, setLimit };
+}
+
+
 ```
 
 ```javascript
@@ -2103,16 +3892,27 @@ export function cn(...inputs: ClassValue[]) {
 ```javascript
 // src/services/admin.api.ts
 import { baseApi } from "./baseApi";
-import type { PageMeta } from "@/types/api";
-import { normalizeList } from "@/types/api";
+import type { ApiOk } from "@/types/api";
+import { toPager, type PagerMeta } from "@/types/api";
+
+
 
 export type AdminSession = {
   id: string;
-  user: { id: string; name: string };
+  user?: { id: string; name?: string };
   status: "pending" | "active" | "submitted" | "cancelled";
   step: 1 | 2 | 3;
   videoRecordingMeta?: { chunks?: number };
 };
+
+export type ListSessionsArgs = {
+  page?: number;
+  limit?: number;
+  q?: string;
+  status?: AdminSession["status"];
+  step?: 1 | 2 | 3;
+};
+export type ListSessionsResult = { items: AdminSession[]; meta: PagerMeta };
 
 export type AuditLog = {
   id: string;
@@ -2122,33 +3922,26 @@ export type AuditLog = {
   message: string;
   createdAt: string;
 };
+export type ListAuditLogsArgs = { page?: number; limit?: number; q?: string };
+export type ListAuditLogsResult = { items: AuditLog[]; meta: PagerMeta };
 
-export type SystemConfig = {
+export type Config = {
   timePerQuestionSec: number;
   retakeLockMinutes: number;
   maxRetakes: number;
   sebMode: "enforce" | "warn" | "off";
 };
 
+
 export const adminApi = baseApi.injectEndpoints({
   endpoints: (b) => ({
-    listSessions: b.query<
-      { items: AdminSession[]; meta?: PageMeta },
-      | {
-          page?: number;
-          limit?: number;
-          q?: string;
-          status?: "pending" | "active" | "submitted" | "cancelled";
-          step?: 1 | 2 | 3;
-          userId?: string;
-          from?: string;
-          to?: string;
-        }
-      | void
-    >({
-      query: (params) => ({ url: "/admin/sessions", params }),
-      transformResponse: (raw: unknown) => normalizeList<AdminSession>(raw),
-      providesTags: ["Sessions"],
+    listSessions: b.query<ListSessionsResult, ListSessionsArgs | void>({
+      query: (args) => ({ url: "/admin/sessions", params: args }),
+      transformResponse: (raw: ApiOk<AdminSession[]>) => ({
+        items: raw.data,
+        meta: toPager(raw.meta),
+      }),
+      providesTags: [{ type: "Sessions", id: "LIST" }],
     }),
 
     getSession: b.query<{ session: AdminSession }, string>({
@@ -2167,32 +3960,25 @@ export const adminApi = baseApi.injectEndpoints({
       providesTags: (_r, _e, id) => [{ type: "Sessions", id }],
     }),
 
-    listAuditLogs: b.query<
-      { items: AuditLog[]; meta?: PageMeta },
-      | {
-          page?: number;
-          limit?: number;
-          actorId?: string;
-          action?: string;
-          resource?: string;
-          from?: string;
-          to?: string;
-          q?: string;
-        }
-      | void
-    >({
-      query: (params) => ({ url: "/admin/audit-logs", params }),
-      transformResponse: (raw: unknown) => normalizeList<AuditLog>(raw),
+    listAuditLogs: b.query<ListAuditLogsResult, ListAuditLogsArgs | void>({
+      query: (args) => ({ url: "/admin/audit-logs", params: args }),
+      transformResponse: (raw: ApiOk<AuditLog[]>) => ({
+        items: raw.data,
+        meta: toPager(raw.meta),
+      }),
+      providesTags: [{ type: "AuditLogs", id: "LIST" }],
     }),
 
-    getConfig: b.query<SystemConfig, void>({
+    getConfig: b.query<Config, void>({
       query: () => ({ url: "/admin/config" }),
-      providesTags: ["Config"],
+      transformResponse: (raw: ApiOk<Config>) => raw.data,
+      providesTags: [{ type: "Config", id: "SINGLE" }],
     }),
 
-    updateConfig: b.mutation<SystemConfig, Partial<SystemConfig>>({
+    updateConfig: b.mutation<Config, Partial<Config>>({
       query: (patch) => ({ url: "/admin/config", method: "PATCH", data: patch }),
-      invalidatesTags: ["Config"],
+      transformResponse: (raw: ApiOk<Config>) => raw.data,
+      invalidatesTags: [{ type: "Config", id: "SINGLE" }],
     }),
   }),
 });
@@ -2205,14 +3991,13 @@ export const {
   useUpdateConfigMutation,
 } = adminApi;
 
-
 ```
 
 ```javascript
-// src/services/auth.api.ts
 import { baseApi } from "./baseApi";
 import { setCredentials, clearAuth } from "@/store/auth.slice";
 import type { RootState } from "@/store/store";
+import type { ApiOk } from "@/types/api";
 import type { AppUser } from "@/types/user";
 
 export type RegisterBody = { name: string; email: string; password: string };
@@ -2236,11 +4021,17 @@ export const authApi = baseApi.injectEndpoints({
     // Login → sets credentials + invalidates /me so dependent screens auto-refresh
     login: b.mutation<LoginResult, LoginBody>({
       query: (body) => ({ url: "/auth/login", method: "POST", data: body }),
+       transformResponse: (raw: ApiOk<LoginResult>) => raw.data,
       async onQueryStarted(_, { dispatch, queryFulfilled }) {
         try {
           const { data } = await queryFulfilled;
-          dispatch(setCredentials({ user: data.user, accessToken: data.accessToken }));
-        } catch { /* handled in UI */ }
+          console.log("login payload (after transform)", data);
+          dispatch(
+            setCredentials({ user: data.user, accessToken: data.accessToken }),
+          );
+        } catch {
+          /* handled in UI */
+        }
       },
       invalidatesTags: ["Me"],
     }),
@@ -2248,53 +4039,80 @@ export const authApi = baseApi.injectEndpoints({
     // Register → backend returns { user } (no token)
     register: b.mutation<RegisterResult, RegisterBody>({
       query: (body) => ({ url: "/auth/register", method: "POST", data: body }),
+      transformResponse: (raw: ApiOk<RegisterResult>) => raw.data,
       invalidatesTags: ["Me"],
     }),
 
     // Optional: manual refresh if you need it in a UI action
     refresh: b.mutation<{ accessToken: string }, void>({
       query: () => ({ url: "/auth/token/refresh", method: "POST" }),
+      transformResponse: (raw: ApiOk<{ accessToken: string }>) => raw.data,
       async onQueryStarted(_, { dispatch, queryFulfilled, getState }) {
         try {
           const { data } = await queryFulfilled;
           const prev = (getState() as RootState).auth;
-          if (prev?.user) dispatch(setCredentials({ user: prev.user, accessToken: data.accessToken }));
-        } catch { /* interceptor/route guards will handle */ }
+          if (prev?.user)
+            dispatch(
+              setCredentials({
+                user: prev.user,
+                accessToken: data.accessToken,
+              }),
+            );
+        } catch {
+          /* interceptor/route guards will handle */
+        }
       },
     }),
 
     // OTP
     sendOtp: b.mutation<OtpOk, OtpSendBody>({
       query: (body) => ({ url: "/auth/otp/send", method: "POST", data: body }),
+       transformResponse: (raw: ApiOk<OtpOk>) => raw.data,
     }),
     verifyOtp: b.mutation<OtpOk, OtpVerifyBody>({
-      query: (body) => ({ url: "/auth/otp/verify", method: "POST", data: body }),
+      query: (body) => ({
+        url: "/auth/otp/verify",
+        method: "POST",
+        data: body,
+      }),
+       transformResponse: (raw: ApiOk<OtpOk>) => raw.data,
       invalidatesTags: ["Me"],
     }),
     resendOtp: b.mutation<OtpOk, OtpSendBody>({
-      query: (body) => ({ url: "/auth/otp/resend", method: "POST", data: body }),
+      query: (body) => ({
+        url: "/auth/otp/resend",
+        method: "POST",
+        data: body,
+      }),
+      transformResponse: (raw: ApiOk<OtpOk>) => raw.data,
     }),
 
     // Forgot/Reset
     forgot: b.mutation<OtpOk, ForgotBody>({
       query: (body) => ({ url: "/auth/forgot", method: "POST", data: body }),
+        transformResponse: (raw: ApiOk<OtpOk>) => raw.data,
     }),
     reset: b.mutation<OtpOk, ResetBody>({
       query: (body) => ({ url: "/auth/reset", method: "POST", data: body }),
+        transformResponse: (raw: ApiOk<OtpOk>) => raw.data,
     }),
 
     // Me / Logout
     me: b.query<MeResult, void>({
       query: () => ({ url: "/users/me" }),
+     transformResponse: (raw: ApiOk<MeResult>) => raw.data,
       providesTags: ["Me"],
-      // NOTE: This assumes baseApi unwraps to the payload under `data`.
-      // If your baseApi returns the full envelope, add: transformResponse: (r: any) => r.data
+
     }),
 
     logout: b.mutation<void, void>({
       query: () => ({ url: "/auth/logout", method: "POST" }),
       async onQueryStarted(_, { dispatch, queryFulfilled }) {
-        try { await queryFulfilled; } finally { dispatch(clearAuth()); }
+        try {
+          await queryFulfilled;
+        } finally {
+          dispatch(clearAuth());
+        }
       },
       invalidatesTags: ["Me"],
     }),
@@ -2304,7 +4122,7 @@ export const authApi = baseApi.injectEndpoints({
 export const {
   useLoginMutation,
   useRegisterMutation,
-  useRefreshMutation,   // optional
+  useRefreshMutation, // optional
   useSendOtpMutation,
   useVerifyOtpMutation,
   useResendOtpMutation,
@@ -2320,11 +4138,14 @@ export const {
 // src/services/baseApi.ts
 import { createApi } from "@reduxjs/toolkit/query/react";
 import type { BaseQueryFn } from "@reduxjs/toolkit/query";
-import type { AxiosRequestConfig } from "axios";
-import axios from "axios";
+import type { AxiosError, AxiosRequestConfig } from "axios";
 import { api } from "@/utils/axios";
+import axios from "axios";
+import type { ApiOk } from "@/types/api";
+import { clearAuth, setCredentials } from "@/store/auth.slice";
+import type { RootState } from "@/store/store";
 
-type QueryArgs = {
+type AxiosParams = {
   url: string;
   method?: AxiosRequestConfig["method"];
   data?: unknown;
@@ -2332,34 +4153,88 @@ type QueryArgs = {
   headers?: Record<string, string>;
 };
 
-export type BaseQueryError = {
-  status: number;
-  data: unknown;
-};
+let refreshPromise: Promise<string> | null = null;
+
+// Use a bare client for refresh so we don't send stale Authorization
+const authless = axios.create({
+  baseURL: 'http://localhost:8080/api/v1',
+  withCredentials: true,
+});
+
+async function refreshAccessToken(): Promise<string> {
+  if (!refreshPromise) {
+    refreshPromise = authless
+      .post<ApiOk<{ accessToken: string }>>("/auth/token/refresh")
+      .then((res) => res.data.data.accessToken)
+      .finally(() => {
+        // allow the next refresh attempt after this one settles
+        setTimeout(() => (refreshPromise = null), 0);
+      });
+  }
+  return refreshPromise;
+}
 
 const axiosBaseQuery =
-  ():
-  BaseQueryFn<QueryArgs, unknown, BaseQueryError> =>
-  async ({ url, method = "GET", data, params, headers }) => {
+  (): BaseQueryFn<AxiosParams, unknown, { status: number; data: unknown }> =>
+  async (args, apiCtx) => {
+    const { url, method = "GET", data, params, headers } = args;
+
     try {
       const res = await api({ url, method, data, params, headers });
-      // backend wraps success in { success, data }
-      return { data: (res.data as { data?: unknown })?.data ?? res.data };
-    } catch (e: unknown) {
-      if (axios.isAxiosError(e)) {
-        const status = e.response?.status ?? 500;
-        const respData = e.response?.data ?? { message: e.message };
-        return { error: { status, data: respData } };
+      // return the raw envelope { success, data, meta }
+      return { data: res.data };
+    } catch (e) {
+      const err = e as AxiosError<{ code?: string; message?: string }>;
+      const status = err.response?.status ?? 500;
+      const code = err.response?.data?.code;
+
+      // Attempt one refresh on 401/UNAUTHORIZED and retry the original request
+      if (status === 401 && code === "UNAUTHORIZED") {
+        try {
+          const token = await refreshAccessToken();
+
+          // stash the new token in redux so the UI & subsequent calls use it
+          const state = apiCtx.getState() as RootState;
+          const prevUser = state.auth.user ?? null;
+          if (prevUser) {
+            apiCtx.dispatch(setCredentials({ user: prevUser, accessToken: token }));
+          }
+
+          // retry the original request with updated Authorization header
+          const cfg = err.config as AxiosRequestConfig;
+          cfg.headers = { ...(cfg.headers ?? {}), Authorization: `Bearer ${token}` };
+          const retry = await api(cfg);
+          return { data: retry.data };
+        } catch {
+          // refresh failed → clear auth and redirect to login
+          apiCtx.dispatch(clearAuth());
+          // hard redirect so protected routes don't flicker
+          window.location.replace("/login?reason=expired");
+          return {
+            error: { status: 401, data: err.response?.data ?? { message: "Unauthorized" } },
+          };
+        }
       }
-      const message = e instanceof Error ? e.message : "Unknown error";
-      return { error: { status: 500, data: { message } } };
+
+      return {
+        error: { status, data: err.response?.data ?? { message: err.message } },
+      };
     }
   };
 
 export const baseApi = createApi({
   reducerPath: "api",
   baseQuery: axiosBaseQuery(),
-  tagTypes: ["Me", "Users", "Competencies", "Questions", "Sessions", "Certs", "Config"],
+  tagTypes: [
+    "Me",
+    "Users",
+    "Competencies",
+    "Questions",
+    "Sessions",
+    "Certs",
+    "Config",
+    "AuditLogs"
+  ],
   endpoints: () => ({}),
 });
 
@@ -2367,73 +4242,65 @@ export const baseApi = createApi({
 
 ```javascript
 // src/services/cert.api.ts
+import { toQueryError, type ApiOk, type QueryError } from "@/types/api";
 import { baseApi } from "./baseApi";
-import type { QueryError } from "@/types/api";
-import { toQueryError } from "@/types/api";
 import { api } from "@/utils/axios";
 import { z } from "zod";
 
 export const Levels = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
-export type HighestLevel = typeof Levels[number];
+export type HighestLevel = (typeof Levels)[number];
 
 export type ICertification = {
   _id: string;
   userId: string;
   highestLevel: HighestLevel;
-  issuedAt: string;
+  issuedAt: string;          // ISO
   certificateId: string;
   pdfUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
-const VerifyPayloadSchema = z.object({
+
+export const VerifyCertificationSchema = z.object({
   certificateId: z.string(),
   highestLevel: z.enum(Levels),
   issuedAt: z.string(),
   user: z.object({
     name: z.string(),
-    email: z.string().email().optional(),
+    email: z.email().optional(),
   }),
 });
-export type VerifyCertificationResult = z.infer<typeof VerifyPayloadSchema>;
-const VerifyEnvelopeSchema = z.object({ data: VerifyPayloadSchema });
+export type VerifyCertificationResult = z.infer<typeof VerifyCertificationSchema>;
+
 
 
 export const certApi = baseApi.injectEndpoints({
   endpoints: (b) => ({
-    myCertification: b.query<{ certification: ICertification | null }, void>({
+     myCertification: b.query<{ certification: ICertification | null }, void>({
       query: () => ({ url: "/certifications/me" }),
-      transformResponse: (raw: unknown) => {
-        if (raw && typeof raw === "object") {
-          const o = raw as Record<string, unknown>;
-          const certification =
-            (o.data as ICertification | null | undefined) ??
-            (o.certification as ICertification | null | undefined) ??
-            (raw as ICertification | null);
-          return { certification };
-        }
-        return { certification: raw as ICertification | null };
-      },
+      transformResponse: (raw: ApiOk<ICertification | null>) => ({
+        certification: raw.data ?? null,
+      }),
       providesTags: ["Certs"],
     }),
 
-      verifyCertification: b.query<VerifyCertificationResult, string>({
+
+    verifyCertification: b.query<VerifyCertificationResult, string>({
       query: (certificateId) => ({ url: `/certifications/verify/${certificateId}` }),
       transformResponse: (raw: unknown): VerifyCertificationResult => {
-        // baseApi usually unwraps to inner "data", but support both shapes safely
-        const direct = VerifyPayloadSchema.safeParse(raw);
-        if (direct.success) return direct.data;
-
-        const env = VerifyEnvelopeSchema.safeParse(raw);
-        if (env.success) return env.data.data;
-
-        // Treat unknown shapes as an error -> hook goes into isError state
-        throw new Error("Invalid verification response shape");
+        // Expect the envelope from baseApi, but validate strictly
+        const env = z.object({ success: z.boolean(), data: z.unknown() }).safeParse(raw);
+        const payload = env.success ? env.data.data : raw;
+        const parsed = VerifyCertificationSchema.safeParse(payload);
+        if (!parsed.success) {
+          throw new Error("Invalid verification response shape");
+        }
+        return parsed.data;
       },
     }),
 
-    getCertificationPdf: b.query<Blob, string>({
+  getCertificationPdf: b.query<Blob, string>({
       async queryFn(id): Promise<{ data: Blob } | { error: QueryError }> {
         try {
           const res = await api.get(`/certifications/${id}/pdf`, {
@@ -2448,13 +4315,12 @@ export const certApi = baseApi.injectEndpoints({
     }),
   }),
 });
-
 export const {
   useMyCertificationQuery,
   useVerifyCertificationQuery,
   useGetCertificationPdfQuery,
   useLazyVerifyCertificationQuery,
-  useLazyGetCertificationPdfQuery
+  useLazyGetCertificationPdfQuery,
 } = certApi;
 
 ```
@@ -2462,8 +4328,8 @@ export const {
 ```javascript
 // src/services/competency.api.ts
 import { baseApi } from "./baseApi";
-import type { PageMeta } from "@/types/api";
-import { normalizeList } from "@/types/api";
+import type { ApiOk } from "@/types/api";
+import { toPager, type PagerMeta } from "@/types/api";
 
 export type ICompetency = {
   _id: string;
@@ -2472,24 +4338,38 @@ export type ICompetency = {
   description?: string;
   createdAt: string;
   updatedAt: string;
+  __v?: number;
 };
+
+export type ListCompetenciesArgs = {
+  page?: number;
+  limit?: number;
+  q?: string;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+};
+
+export type ListCompetenciesResult = { items: ICompetency[]; meta: PagerMeta };
+
 
 export const competencyApi = baseApi.injectEndpoints({
   endpoints: (b) => ({
-    listCompetencies: b.query<
-      { items: ICompetency[]; meta?: PageMeta },
-      | {
-          page?: number;
-          limit?: number;
-          q?: string;
-          sortBy?: "name" | "code" | "createdAt";
-          sortOrder?: "asc" | "desc";
-        }
-      | void
-    >({
-      query: (params) => ({ url: "/competencies", params }),
-      transformResponse: (raw: unknown) => normalizeList<ICompetency>(raw),
-      providesTags: ["Competencies"],
+    listCompetencies: b.query<ListCompetenciesResult, ListCompetenciesArgs | void>({
+      query: (args) => ({
+        url: "/competencies",
+        params: args,
+      }),
+     transformResponse: (raw: ApiOk<ICompetency[]>) => ({
+        items: raw.data,
+        meta: toPager(raw.meta),
+      }),
+      providesTags: (res) =>
+        res
+          ? [
+              ...res.items.map((c) => ({ type: "Competencies" as const, id: c._id })),
+              { type: "Competencies" as const, id: "LIST" },
+            ]
+          : [{ type: "Competencies" as const, id: "LIST" }],
     }),
 
     getCompetency: b.query<{ competency: ICompetency }, string>({
@@ -2509,29 +4389,22 @@ export const competencyApi = baseApi.injectEndpoints({
       providesTags: (_r, _e, id) => [{ type: "Competencies", id }],
     }),
 
-    createCompetency: b.mutation<
-      { competency: ICompetency },
-      { code: string; name: string; description?: string }
-    >({
+    createCompetency: b.mutation<ICompetency, Pick<ICompetency, "code" | "name" | "description">>({
       query: (body) => ({ url: "/competencies", method: "POST", data: body }),
-      invalidatesTags: ["Competencies"],
+      transformResponse: (raw: ApiOk<ICompetency>) => raw.data,
+      invalidatesTags: [{ type: "Competencies", id: "LIST" }],
     }),
 
-    updateCompetency: b.mutation<
-      { competency: ICompetency },
-      { id: string; patch: Partial<Pick<ICompetency, "code" | "name" | "description">> }
-    >({
-      query: ({ id, patch }) => ({
-        url: `/competencies/${id}`,
-        method: "PATCH",
-        data: patch,
-      }),
-      invalidatesTags: ["Competencies"],
+    updateCompetency: b.mutation<ICompetency, { id: string; patch: Partial<Pick<ICompetency,"code"|"name"|"description">> }>({
+      query: ({ id, patch }) => ({ url: `/competencies/${id}`, method: "PATCH", data: patch }),
+      transformResponse: (raw: ApiOk<ICompetency>) => raw.data,
+      invalidatesTags: (res, err, arg) => [{ type: "Competencies", id: arg.id }, { type: "Competencies", id: "LIST" }],
     }),
 
-    deleteCompetency: b.mutation<{ deleted: true }, string>({
+    deleteCompetency: b.mutation<{ ok: boolean }, string>({
       query: (id) => ({ url: `/competencies/${id}`, method: "DELETE" }),
-      invalidatesTags: ["Competencies"],
+      transformResponse: () => ({ ok: true }),
+      invalidatesTags: [{ type: "Competencies", id: "LIST" }],
     }),
   }),
 });
@@ -2623,15 +4496,33 @@ export const {
 ```javascript
 // src/services/question.api.ts
 import { baseApi } from "./baseApi";
-import type { PageMeta, QueryError } from "@/types/api";
-import { normalizeList, toQueryError } from "@/types/api";
+import type { ApiOk, QueryError } from "@/types/api";
+import { toPager, toQueryError, type PagerMeta } from "@/types/api";
 import { api } from "@/utils/axios";
+
+
+export type CreateQuestionDto = {
+  competencyId: string;                 // <-- string id for create
+  level: QuestionLevel;
+  prompt: string;
+  options: string[];
+  correctIndex: number;
+  isActive: boolean;
+  meta?: { difficulty?: "easy" | "medium" | "hard"; tags?: string[] };
+};
+
+export type UpdateQuestionDto = Partial<CreateQuestionDto>;
+
+
 
 export type QuestionLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
 
 export type IQuestion = {
   _id: string;
-  competencyId: string;
+  competencyId: {
+    _id: string;
+    name: string;
+  };
   level: QuestionLevel;
   prompt: string;
   options: string[];
@@ -2642,26 +4533,29 @@ export type IQuestion = {
   updatedAt: string;
 };
 
+export type ListQuestionsArgs = {
+  page?: number;
+  limit?: number;
+  q?: string;
+  level?: QuestionLevel;
+  competencyId?: string;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+};
+
+export type ListQuestionsResult = { items: IQuestion[]; meta: PagerMeta };
+
+
 export const questionApi = baseApi.injectEndpoints({
   endpoints: (b) => ({
-    listQuestions: b.query<
-      { items: IQuestion[]; meta?: PageMeta },
-      {
-        page?: number;
-        limit?: number;
-        q?: string;
-        level?: QuestionLevel;
-        competencyId?: string;
-        isActive?: boolean;
-        sortBy?: "createdAt" | "level" | "prompt";
-        sortOrder?: "asc" | "desc";
-      } | void
-    >({
-      query: (params) => ({ url: "/questions", params }),
-      transformResponse: (raw: unknown) => normalizeList<IQuestion>(raw),
-      providesTags: ["Questions"],
+    listQuestions: b.query<ListQuestionsResult, ListQuestionsArgs | void>({
+      query: (args) => ({ url: "/questions", params: args }),
+      transformResponse: (raw: ApiOk<IQuestion[]>) => ({
+        items: raw.data,
+        meta: toPager(raw.meta),
+      }),
+      providesTags: [{ type: "Questions", id: "LIST" }],
     }),
-
     getQuestion: b.query<{ question: IQuestion }, string>({
       query: (id) => ({ url: `/questions/${id}` }),
       transformResponse: (raw: unknown) => {
@@ -2678,60 +4572,50 @@ export const questionApi = baseApi.injectEndpoints({
       providesTags: (_r, _e, id) => [{ type: "Questions", id }],
     }),
 
-    createQuestion: b.mutation<
-      { question: Pick<IQuestion, "_id"> },
-      Omit<IQuestion, "_id" | "createdAt" | "updatedAt">
-    >({
+   createQuestion: b.mutation<{ question: Pick<IQuestion, "_id"> }, CreateQuestionDto>({
       query: (body) => ({ url: "/questions", method: "POST", data: body }),
       invalidatesTags: ["Questions"],
     }),
-
-    updateQuestion: b.mutation<
-      { question: IQuestion },
-      { id: string; patch: Partial<IQuestion> }
-    >({
-      query: ({ id, patch }) => ({
-        url: `/questions/${id}`,
-        method: "PATCH",
-        data: patch,
-      }),
+   updateQuestion: b.mutation<{ question: IQuestion }, { id: string; patch: UpdateQuestionDto }>({
+      query: ({ id, patch }) => ({ url: `/questions/${id}`, method: "PATCH", data: patch }),
       invalidatesTags: ["Questions"],
     }),
-
-    deleteQuestion: b.mutation<{ deleted: true }, string>({
+    deleteQuestion: b.mutation<{ ok: boolean }, string>({
       query: (id) => ({ url: `/questions/${id}`, method: "DELETE" }),
-      invalidatesTags: ["Questions"],
+      transformResponse: () => ({ ok: true }),
+      invalidatesTags: [{ type: "Questions", id: "LIST" }],
     }),
 
-    importQuestions: b.mutation<
-      { imported: number },
-      { file: File; mode?: "upsert" | "insert" }
-    >({
+    importQuestions: b.mutation<{ ok: boolean }, { file: File; mode?: "insert" | "upsert" }>({
       query: ({ file, mode = "upsert" }) => {
         const form = new FormData();
         form.append("file", file);
-        return {
-          url: `/questions/import`,
-          method: "POST",
-          params: { mode },
-          data: form,
-        };
+        form.append("mode", mode);
+        return { url: "/questions/import", method: "POST", data: form };
       },
-      invalidatesTags: ["Questions"],
+      transformResponse: () => ({ ok: true }),
+      invalidatesTags: [{ type: "Questions", id: "LIST" }],
     }),
 
     exportQuestions: b.query<Blob, void>({
       async queryFn(): Promise<{ data: Blob } | { error: QueryError }> {
         try {
-          const res = await api.get(`/questions/export`, {
-            responseType: "blob",
-          });
-          return { data: res.data as Blob };
-        } catch (e: unknown) {
+          const res = await api.get("/questions/export", { responseType: "blob" });
+
+          // If the server accidentally wraps CSV in JSON, coerce to Blob anyway.
+          const data = res.data;
+          const blob =
+            data instanceof Blob
+              ? data
+              : new Blob([typeof data === "string" ? data : JSON.stringify(data)], {
+                  type: "text/csv;charset=utf-8",
+                });
+
+          return { data: blob };
+        } catch (e) {
           return { error: toQueryError(e) };
         }
       },
-      providesTags: ["Questions"],
     }),
   }),
 });
@@ -2746,20 +4630,18 @@ export const {
   useExportQuestionsQuery,
 } = questionApi;
 
-
 ```
 
 ```javascript
 // src/services/user.api.ts
 import { baseApi } from "./baseApi";
-import type { PageMeta } from "@/types/api";
-import { normalizeList } from "@/types/api";
-
+import type { ApiOk } from "@/types/api";
+import { toPager, type PagerMeta } from "@/types/api";
 export type Role = "admin" | "student" | "supervisor";
-export type UserStatus = "active" | "inactive";
+export type UserStatus = "active" | "disabled";
 
 export type PublicUser = {
-  id: string;
+  _id: string;
   name: string;
   email: string;
   role: Role;
@@ -2768,16 +4650,26 @@ export type PublicUser = {
   updatedAt?: string;
 };
 
+export type AdminListUsersArgs = {
+  page?: number;
+  limit?: number;
+  q?: string;
+  role?: PublicUser["role"];
+  status?: PublicUser["status"];
+};
+
+export type AdminListUsersResult = { items: PublicUser[]; meta: PagerMeta };
+
 export const userApi = baseApi.injectEndpoints({
   endpoints: (b) => ({
-    adminListUsers: b.query<
-      { items: PublicUser[]; meta?: PageMeta },
-      | { page?: number; limit?: number; q?: string; role?: Role; status?: UserStatus }
-      | void
+    adminListUsers: b.query<AdminListUsersResult, AdminListUsersArgs | void
     >({
       query: (params) => ({ url: "/admin/users", params }),
-      transformResponse: (raw: unknown) => normalizeList<PublicUser>(raw),
-      providesTags: ["Users"],
+      transformResponse: (raw: ApiOk<PublicUser[]>) => ({
+        items: raw.data,
+        meta: toPager(raw.meta),
+      }),
+      providesTags: [{ type: "Users", id: "LIST" }],
     }),
 
     adminGetUser: b.query<PublicUser, string>({
@@ -2796,24 +4688,15 @@ export const userApi = baseApi.injectEndpoints({
       providesTags: (_r, _e, id) => [{ type: "Users", id }],
     }),
 
-    adminCreateUser: b.mutation<
-      PublicUser,
-      { name: string; email: string; role: Role; password: string }
-    >({
+    adminCreateUser: b.mutation<PublicUser, { name: string; email: string; role: PublicUser["role"]; password: string }>({
       query: (body) => ({ url: "/admin/users", method: "POST", data: body }),
-      invalidatesTags: ["Users"],
+      transformResponse: (raw: ApiOk<PublicUser>) => raw.data,
+      invalidatesTags: [{ type: "Users", id: "LIST" }],
     }),
-
-    adminUpdateUser: b.mutation<
-      PublicUser,
-      { id: string; patch: Partial<Pick<PublicUser, "name" | "role" | "status">> & { password?: string } }
-    >({
-      query: ({ id, patch }) => ({
-        url: `/admin/users/${id}`,
-        method: "PATCH",
-        data: patch,
-      }),
-      invalidatesTags: ["Users"],
+    adminUpdateUser: b.mutation<PublicUser, { id: string; patch: Partial<Pick<PublicUser, "name" | "role" | "status">> & { password?: string } }>({
+      query: ({ id, patch }) => ({ url: `/admin/users/${id}`, method: "PATCH", data: patch }),
+      transformResponse: (raw: ApiOk<PublicUser>) => raw.data,
+      invalidatesTags: [{ type: "Users", id: "LIST" }],
     }),
   }),
 });
@@ -2849,6 +4732,7 @@ const authSlice = createSlice({
       action: PayloadAction<{ user: AppUser; accessToken: string }>,
     ) => {
       state.user = action.payload.user;
+
       state.accessToken = action.payload.accessToken;
       setAccessToken(action.payload.accessToken);
     },
@@ -2862,6 +4746,7 @@ const authSlice = createSlice({
 
 export const { setCredentials, clearAuth } = authSlice.actions;
 export default authSlice.reducer;
+
 
 ```
 
@@ -3042,54 +4927,67 @@ export type AppDispatch = typeof store.dispatch;
 ```
 
 ```javascript
-// src/types/api.ts
-
-export type PageMeta = {
+//src/types/api.ts
+export type ApiMetaRaw = {
   page: number;
   limit: number;
   total: number;
+};
+
+export type PagerMeta = ApiMetaRaw & {
   pageCount: number;
 };
 
-export type QueryError = { status: number; data: unknown };
-
-/** Some endpoints return { items, meta }, others { data, meta }, others a bare array. */
-export function normalizeList<T>(
-  raw: unknown
-): { items: T[]; meta?: PageMeta } {
-  if (Array.isArray(raw)) return { items: raw };
-
-  if (raw && typeof raw === "object") {
-    const obj = raw as Record<string, unknown>;
-    const fromItems = Array.isArray(obj.items)
-      ? (obj.items as T[])
-      : undefined;
-    const fromData = Array.isArray(obj.data)
-      ? (obj.data as T[])
-      : undefined;
-    const meta = (obj.meta as PageMeta | undefined) ?? undefined;
-
-    if (fromItems) return { items: fromItems, meta };
-    if (fromData) return { items: fromData, meta };
-  }
-  return { items: [] };
+export function toPager(meta?: ApiMetaRaw): PagerMeta {
+  const page = meta?.page ?? 1;
+  const limit = meta?.limit ?? 10;
+  const total = meta?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / Math.max(1, limit)));
+  return { page, limit, total, pageCount };
 }
 
-/** Turn unknown error (Axios, fetch, thrown string) into RTK-friendly error. */
+export type ApiOk<T> = {
+  success: true;
+  data: T;
+  meta?: ApiMetaRaw;
+  message?: string;
+};
+export type ApiErr = {
+  success: false;
+  code?: string;
+  message: string;
+  details?: unknown;
+};
+
+
+export type QueryError = {
+  status: number;
+  data: unknown;
+};
+
+// Narrower check for Axios-like errors (no axios import needed)
+type AxiosLikeError = {
+  response?: { status?: number; data?: unknown };
+  message?: string;
+};
+
+// Runtime guard
+function isAxiosLike(e: unknown): e is AxiosLikeError {
+  return typeof e === "object" && e !== null && "response" in (e as Record<string, unknown>);
+}
+
+// Convert unknown -> QueryError (no `any`)
 export function toQueryError(e: unknown): QueryError {
-  type MaybeAxiosErr = { response?: { status?: number; data?: unknown } };
-  const m = e as MaybeAxiosErr;
-
-  const status =
-    typeof m?.response?.status === "number" ? m.response!.status : 500;
-
-  const data =
-    m?.response?.data ??
-    (e instanceof Error ? e.message : e ?? "Unknown error");
-
-  return { status, data };
+  if (isAxiosLike(e)) {
+    const status = e.response?.status ?? 500;
+    const data = e.response?.data ?? { message: e.message ?? "Request failed" };
+    return { status, data };
+  }
+  return {
+    status: 500,
+    data: { message: e instanceof Error ? e.message : "Request failed" },
+  };
 }
-
 ```
 
 ```javascript
@@ -3489,11 +5387,7 @@ export function RoleGuard({ allow }: { allow: Array<"admin" | "student" | "super
 ```
 
 ```javascript
-// src/routes/pages.tsx
-export const LoginPage = () => <div className="p-6">Login Page</div>;
-export const StudentDashboard = () => (
-  <div className="p-6">Student Dashboard</div>
-);
+
 ```
 
 ```javascript
@@ -3512,6 +5406,13 @@ import ExamStepPage from "@/features/exam/pages/ExamStepPage";
 import ExamResultPage from "@/features/exam/pages/ExamResultPage";
 import VerifyCertificationPage from "@/features/cert/pages/VerifyCertificationPage";
 import MyCertificationPage from "@/features/cert/pages/MyCertificationPage";
+import AdminLayout from "@/components/layouts/AdminLayout";
+import UsersPage from "@/features/admin/pages/UsersPage";
+import CompetenciesPage from "@/features/admin/pages/CompetenciesPage";
+import QuestionsPage from "@/features/admin/pages/QuestionsPage";
+import SessionsPage from "@/features/admin/pages/SessionsPage";
+import AuditLogsPage from "@/features/admin/pages/AuditLogsPage";
+import ConfigPage from "@/features/admin/pages/ConfigPage";
 
 export const router = createBrowserRouter([
   { path: "/", element: <Navigate to="/student/dashboard" replace /> },
@@ -3562,6 +5463,24 @@ export const router = createBrowserRouter([
               {
                 path: "/student/certification",
                 element: <MyCertificationPage />,
+              },
+            ],
+          },
+          {
+            element: <RoleGuard allow={["admin"]} />,
+            children: [
+              {
+                path: "/admin",
+                element: <AdminLayout />,
+                children: [
+                  { index: true, element: <UsersPage /> },
+                  { path: "users", element: <UsersPage /> },
+                  { path: "competencies", element: <CompetenciesPage /> },
+                  { path: "questions", element: <QuestionsPage /> },
+                  { path: "sessions", element: <SessionsPage /> },
+                  { path: "audit-logs", element: <AuditLogsPage /> },
+                  { path: "config", element: <ConfigPage /> },
+                ],
               },
             ],
           },

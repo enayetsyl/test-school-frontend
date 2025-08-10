@@ -13,6 +13,13 @@ import ExamStepPage from "@/features/exam/pages/ExamStepPage";
 import ExamResultPage from "@/features/exam/pages/ExamResultPage";
 import VerifyCertificationPage from "@/features/cert/pages/VerifyCertificationPage";
 import MyCertificationPage from "@/features/cert/pages/MyCertificationPage";
+import AdminLayout from "@/components/layouts/AdminLayout";
+import UsersPage from "@/features/admin/pages/UsersPage";
+import CompetenciesPage from "@/features/admin/pages/CompetenciesPage";
+import QuestionsPage from "@/features/admin/pages/QuestionsPage";
+import SessionsPage from "@/features/admin/pages/SessionsPage";
+import AuditLogsPage from "@/features/admin/pages/AuditLogsPage";
+import ConfigPage from "@/features/admin/pages/ConfigPage";
 
 export const router = createBrowserRouter([
   { path: "/", element: <Navigate to="/student/dashboard" replace /> },
@@ -63,6 +70,24 @@ export const router = createBrowserRouter([
               {
                 path: "/student/certification",
                 element: <MyCertificationPage />,
+              },
+            ],
+          },
+          {
+            element: <RoleGuard allow={["admin"]} />,
+            children: [
+              {
+                path: "/admin",
+                element: <AdminLayout />,
+                children: [
+                  { index: true, element: <UsersPage /> },
+                  { path: "users", element: <UsersPage /> },
+                  { path: "competencies", element: <CompetenciesPage /> },
+                  { path: "questions", element: <QuestionsPage /> },
+                  { path: "sessions", element: <SessionsPage /> },
+                  { path: "audit-logs", element: <AuditLogsPage /> },
+                  { path: "config", element: <ConfigPage /> },
+                ],
               },
             ],
           },

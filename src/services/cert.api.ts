@@ -1,7 +1,6 @@
 // src/services/cert.api.ts
+import { toQueryError, type ApiOk, type QueryError } from "@/types/api";
 import { baseApi } from "./baseApi";
-import type { QueryError } from "@/types/api";
-import { toQueryError } from "@/types/api";
 import { api } from "@/utils/axios";
 import { z } from "zod";
 
@@ -12,40 +11,33 @@ export type ICertification = {
   _id: string;
   userId: string;
   highestLevel: HighestLevel;
-  issuedAt: string;
+  issuedAt: string; // ISO
   certificateId: string;
   pdfUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
-const VerifyPayloadSchema = z.object({
+export const VerifyCertificationSchema = z.object({
   certificateId: z.string(),
   highestLevel: z.enum(Levels),
   issuedAt: z.string(),
   user: z.object({
     name: z.string(),
-    email: z.string().email().optional(),
+    email: z.email().optional(),
   }),
 });
-export type VerifyCertificationResult = z.infer<typeof VerifyPayloadSchema>;
-const VerifyEnvelopeSchema = z.object({ data: VerifyPayloadSchema });
+export type VerifyCertificationResult = z.infer<
+  typeof VerifyCertificationSchema
+>;
 
 export const certApi = baseApi.injectEndpoints({
   endpoints: (b) => ({
     myCertification: b.query<{ certification: ICertification | null }, void>({
       query: () => ({ url: "/certifications/me" }),
-      transformResponse: (raw: unknown) => {
-        if (raw && typeof raw === "object") {
-          const o = raw as Record<string, unknown>;
-          const certification =
-            (o.data as ICertification | null | undefined) ??
-            (o.certification as ICertification | null | undefined) ??
-            (raw as ICertification | null);
-          return { certification };
-        }
-        return { certification: raw as ICertification | null };
-      },
+      transformResponse: (raw: ApiOk<ICertification | null>) => ({
+        certification: raw.data ?? null,
+      }),
       providesTags: ["Certs"],
     }),
 
@@ -54,15 +46,16 @@ export const certApi = baseApi.injectEndpoints({
         url: `/certifications/verify/${certificateId}`,
       }),
       transformResponse: (raw: unknown): VerifyCertificationResult => {
-        // baseApi usually unwraps to inner "data", but support both shapes safely
-        const direct = VerifyPayloadSchema.safeParse(raw);
-        if (direct.success) return direct.data;
-
-        const env = VerifyEnvelopeSchema.safeParse(raw);
-        if (env.success) return env.data.data;
-
-        // Treat unknown shapes as an error -> hook goes into isError state
-        throw new Error("Invalid verification response shape");
+        // Expect the envelope from baseApi, but validate strictly
+        const env = z
+          .object({ success: z.boolean(), data: z.unknown() })
+          .safeParse(raw);
+        const payload = env.success ? env.data.data : raw;
+        const parsed = VerifyCertificationSchema.safeParse(payload);
+        if (!parsed.success) {
+          throw new Error("Invalid verification response shape");
+        }
+        return parsed.data;
       },
     }),
 
@@ -81,7 +74,6 @@ export const certApi = baseApi.injectEndpoints({
     }),
   }),
 });
-
 export const {
   useMyCertificationQuery,
   useVerifyCertificationQuery,

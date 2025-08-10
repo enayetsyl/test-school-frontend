@@ -8,6 +8,7 @@ export function defaultRouteForRole(role: Role): string {
     case "supervisor":
       return "/supervisor";
     case "student":
+      return "/student/dashboard";
     default:
       return "/dashboard";
   }

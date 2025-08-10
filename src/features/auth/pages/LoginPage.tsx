@@ -39,6 +39,7 @@ export default function LoginPage() {
     try {
       const res = await login(values).unwrap();
       toast.success("Logged in");
+      console.log("res", res);
       const to = defaultRouteForRole(res.user.role);
       navigate(to, { replace: true });
     } catch (e: unknown) {
