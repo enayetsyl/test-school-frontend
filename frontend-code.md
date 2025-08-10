@@ -1494,18 +1494,15 @@ export { Skeleton }
 ```
 
 ```javascript
-// src/components/ui/sooner.tsx
-"use client"
+"use client";
 
-import { useTheme } from "next-themes"
-import { Toaster as Sonner, ToasterProps } from "sonner"
+import { Toaster as Sonner, type ToasterProps } from "sonner";
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme()
 
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
+
       className="toaster group"
       style={
         {
@@ -1516,10 +1513,10 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }
       {...props}
     />
-  )
-}
+  );
+};
 
-export { Toaster }
+export { Toaster };
 
 ```
 
@@ -1555,9 +1552,15 @@ export { Textarea }
 import type { Role } from "@/types/user";
 
 export function defaultRouteForRole(role: Role): string {
-  if (role === "admin") return "/admin";
-  if (role === "supervisor") return "/supervisor";
-  return "/student/dashboard";
+   switch (role) {
+    case "admin":
+      return "/admin";
+    case "supervisor":
+      return "/supervisor";
+    case "student":
+    default:
+      return "/dashboard";
+  }
 }
 
 
@@ -1617,23 +1620,32 @@ import { Button } from "@/components/ui/button";
 import AuthCard from "../components/AuthCard";
 import { toast } from "sonner";
 import { extractApiError } from "@/utils/extractApiError";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, Navigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import type { RootState } from "@/store/store";
 import { defaultRouteForRole } from "../route-helpers";
+import type { Role } from "@/types/user";
+
+
 
 const Schema = z.object({
-  email: z.string().email(),
+  email: z.email(),
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
 type FormValues = z.infer<typeof Schema>;
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const role = useSelector((s: RootState) => s.auth.user?.role);
+    const role = useSelector((s: RootState) => s.auth.user?.role ?? null);
+
+
 
   const [login, { isLoading }] = useLoginMutation();
-  const { register, handleSubmit, formState: { errors } } = useForm<FormValues>({
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<FormValues>({
     resolver: zodResolver(Schema),
     defaultValues: { email: "", password: "" },
   });
@@ -1648,13 +1660,10 @@ export default function LoginPage() {
       toast.error(extractApiError(e));
     }
   };
-
-  // If already logged in, push to default route
+// ✅ declarative redirect — NO navigate() during render
   if (role) {
-    navigate(defaultRouteForRole(role), { replace: true });
-    return null;
+    return <Navigate to={defaultRouteForRole(role as Role)} replace />;
   }
-
   return (
     <AuthCard
       title="Sign in"
@@ -1662,25 +1671,45 @@ export default function LoginPage() {
       footer={
         <div className="w-full text-sm text-muted-foreground">
           <span>New here?</span>{" "}
-          <Link className="underline" to="/register">Create an account</Link>
+          <Link className="underline" to="/register">
+            Create an account
+          </Link>
         </div>
       }
     >
       <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4">
         <div className="grid gap-2">
           <Label htmlFor="email">Email</Label>
-          <Input id="email" type="email" {...register("email")} aria-invalid={!!errors.email} />
-          {errors.email?.message && <p className="text-sm text-destructive">{errors.email.message}</p>}
+          <Input
+            id="email"
+            type="email"
+            {...register("email")}
+            aria-invalid={!!errors.email}
+          />
+          {errors.email?.message && (
+            <p className="text-sm text-destructive">{errors.email.message}</p>
+          )}
         </div>
 
         <div className="grid gap-2">
           <Label htmlFor="password">Password</Label>
-          <Input id="password" type="password" {...register("password")} aria-invalid={!!errors.password} />
-          {errors.password?.message && <p className="text-sm text-destructive">{errors.password.message}</p>}
+          <Input
+            id="password"
+            type="password"
+            {...register("password")}
+            aria-invalid={!!errors.password}
+          />
+          {errors.password?.message && (
+            <p className="text-sm text-destructive">
+              {errors.password.message}
+            </p>
+          )}
         </div>
 
         <div className="flex items-center justify-between">
-          <Link className="text-sm underline" to="/forgot">Forgot password?</Link>
+          <Link className="text-sm underline" to="/forgot">
+            Forgot password?
+          </Link>
         </div>
 
         <Button type="submit" disabled={isLoading}>
@@ -1690,7 +1719,6 @@ export default function LoginPage() {
     </AuthCard>
   );
 }
-
 
 ```
 
@@ -1915,7 +1943,7 @@ export default function ForgotPasswordPage() {
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { useLocation, useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useResetMutation } from "@/services/auth.api";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1925,35 +1953,44 @@ import { toast } from "sonner";
 import { extractApiError } from "@/utils/extractApiError";
 import { useEffect } from "react";
 
-function useEmailFromQuery(): {email:string; otp: string} {
-  const search = new URLSearchParams(useLocation().search);
-  return { email: search.get("email") ?? "", otp: search.get("otp") ?? "" };
-}
+type ResetForm = {
+  email: string;
+  otp: string;
+  newPassword: string;
+};
+
 
 const Schema = z.object({
-  email: z.string().email(),
+  email: z.email(),
   otp: z.string().length(6, "OTP must be 6 digits"),
   newPassword: z.string().min(8, "Password must be at least 8 characters"),
 });
 type FormValues = z.infer<typeof Schema>;
 
 export default function ResetPasswordPage() {
-  const { email, otp } = useEmailFromQuery();
+  const [params] = useSearchParams();
   const navigate = useNavigate();
   const [reset, { isLoading }] = useResetMutation();
 
-  const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormValues>({
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    formState: { errors },
+  } = useForm<ResetForm>({
     resolver: zodResolver(Schema),
-    defaultValues: { email, otp, newPassword: "" },
+     defaultValues: { email: "", otp: "", newPassword: "" },
   });
 
-   useEffect(() => {
-    setValue("email", email, { shouldValidate: false });
-    if (otp) setValue("otp", otp, { shouldValidate: false });
-  }, [email, otp, setValue]);
+    useEffect(() => {
+    const emailParam = params.get("email");
+    const otpParam = params.get("otp");
+    if (emailParam) setValue("email", emailParam, { shouldValidate: false });
+    if (otpParam) setValue("otp", otpParam, { shouldValidate: false });
 
-  // keep email field synced (read-only)
-  if (email) setValue("email", email, { shouldValidate: false });
+  }, [params, setValue]);
+
+
 
   const onSubmit = async (values: FormValues) => {
     try {
@@ -1969,7 +2006,11 @@ export default function ResetPasswordPage() {
     <AuthCard
       title="Reset password"
       description="Enter the OTP and your new password"
-      footer={<Link className="text-sm underline" to="/login">Back to sign in</Link>}
+      footer={
+        <Link className="text-sm underline" to="/login">
+          Back to sign in
+        </Link>
+      }
     >
       <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4">
         <div className="grid gap-2">
@@ -1979,15 +2020,30 @@ export default function ResetPasswordPage() {
 
         <div className="grid gap-2">
           <Label htmlFor="otp">OTP</Label>
-          <Input id="otp" inputMode="numeric" maxLength={6} {...register("otp")} aria-invalid={!!errors.otp} />
-          {errors.otp?.message && <p className="text-sm text-destructive">{errors.otp.message}</p>}
+          <Input
+            id="otp"
+            inputMode="numeric"
+            maxLength={6}
+            {...register("otp")}
+            aria-invalid={!!errors.otp}
+          />
+          {errors.otp?.message && (
+            <p className="text-sm text-destructive">{errors.otp.message}</p>
+          )}
         </div>
 
         <div className="grid gap-2">
           <Label htmlFor="newPassword">New password</Label>
-          <Input id="newPassword" type="password" {...register("newPassword")} aria-invalid={!!errors.newPassword} />
+          <Input
+            id="newPassword"
+            type="password"
+            {...register("newPassword")}
+            aria-invalid={!!errors.newPassword}
+          />
           {errors.newPassword?.message && (
-            <p className="text-sm text-destructive">{errors.newPassword.message}</p>
+            <p className="text-sm text-destructive">
+              {errors.newPassword.message}
+            </p>
           )}
         </div>
 
@@ -1998,7 +2054,6 @@ export default function ResetPasswordPage() {
     </AuthCard>
   );
 }
-
 
 ```
 
@@ -2035,7 +2090,7 @@ export default function ResetPasswordPage() {
 ```
 
 ```javascript
-// src/libs/utils.ts
+// src/lib/utils.ts
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
