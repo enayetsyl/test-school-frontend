@@ -1,11 +1,14 @@
-import { Button } from "@/components/ui/button";
+// src/app/App.tsx
+import { RouterProvider } from "react-router-dom";
+import { Toaster } from "@/components/ui/sonner";
+import { ThemeProvider } from "@/app/ThemeProvider"; // your custom one
+import { router } from "@/routes/router";
 
-function App() {
+export default function App() {
   return (
-    <div className="flex min-h-svh flex-col items-center justify-center">
-      <Button>Click me</Button>
-    </div>
+    <ThemeProvider>
+      <RouterProvider router={router} />
+      <Toaster richColors position="bottom-right" />
+    </ThemeProvider>
   );
 }
-
-export default App;
