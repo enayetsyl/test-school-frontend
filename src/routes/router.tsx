@@ -11,6 +11,8 @@ import AppLayout from "@/components/layouts/AppLayout";
 import PublicAuthLayout from "@/components/layouts/PublicAuthLayout";
 import ExamStepPage from "@/features/exam/pages/ExamStepPage";
 import ExamResultPage from "@/features/exam/pages/ExamResultPage";
+import VerifyCertificationPage from "@/features/cert/pages/VerifyCertificationPage";
+import MyCertificationPage from "@/features/cert/pages/MyCertificationPage";
 
 export const router = createBrowserRouter([
   { path: "/", element: <Navigate to="/student/dashboard" replace /> },
@@ -24,6 +26,7 @@ export const router = createBrowserRouter([
       { path: "/verify-otp", element: <VerifyOtpPage /> },
       { path: "/forgot", element: <ForgotPasswordPage /> },
       { path: "/reset", element: <ResetPasswordPage /> },
+      { path: "/certifications/verify", element: <VerifyCertificationPage /> },
     ],
   },
   // Protected area (shows Navbar)
@@ -51,6 +54,16 @@ export const router = createBrowserRouter([
             children: [
               { path: "/student/exam/step/:n", element: <ExamStepPage /> },
               { path: "/student/exam/result", element: <ExamResultPage /> },
+            ],
+          },
+          // student view of their certification
+          {
+            element: <RoleGuard allow={["student"]} />,
+            children: [
+              {
+                path: "/student/certification",
+                element: <MyCertificationPage />,
+              },
             ],
           },
           // Supervisor-only placeholder (optional)

@@ -378,10 +378,11 @@ export default function AppNavbar() {
   const navigate = useNavigate();
   const [logout, { isLoading }] = useLogoutMutation();
 
-  const links = [
+   const links = [
     { to: "/student/dashboard", label: "Dashboard", show: true },
-    { to: "/student/exam/step/:n", label: "Exam", show: true },
-    { to: "/student/exam/result", label: "Result", show: true },
+    { to: "/student/exam/step/:n", label: "Exam", show: role === "student" },
+    { to: "/student/exam/result", label: "Result", show: role === "student" },
+    { to: "/student/certification", label: "Certificate", show: role === "student" },
     { to: "/admin", label: "Admin", show: role === "admin" },
     { to: "/supervisor", label: "Supervisor", show: role === "supervisor" },
   ].filter((l) => l.show);
@@ -2315,17 +2316,34 @@ import { baseApi } from "./baseApi";
 import type { QueryError } from "@/types/api";
 import { toQueryError } from "@/types/api";
 import { api } from "@/utils/axios";
+import { z } from "zod";
+
+export const Levels = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
+export type HighestLevel = typeof Levels[number];
 
 export type ICertification = {
   _id: string;
   userId: string;
-  highestLevel: "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
+  highestLevel: HighestLevel;
   issuedAt: string;
   certificateId: string;
   pdfUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 };
+
+const VerifyPayloadSchema = z.object({
+  certificateId: z.string(),
+  highestLevel: z.enum(Levels),
+  issuedAt: z.string(),
+  user: z.object({
+    name: z.string(),
+    email: z.string().email().optional(),
+  }),
+});
+export type VerifyCertificationResult = z.infer<typeof VerifyPayloadSchema>;
+const VerifyEnvelopeSchema = z.object({ data: VerifyPayloadSchema });
+
 
 export const certApi = baseApi.injectEndpoints({
   endpoints: (b) => ({
@@ -2345,11 +2363,19 @@ export const certApi = baseApi.injectEndpoints({
       providesTags: ["Certs"],
     }),
 
-    verifyCertification: b.query<
-      { valid: boolean; holderName?: string; level?: string; issuedAt?: string },
-      string
-    >({
+      verifyCertification: b.query<VerifyCertificationResult, string>({
       query: (certificateId) => ({ url: `/certifications/verify/${certificateId}` }),
+      transformResponse: (raw: unknown): VerifyCertificationResult => {
+        // baseApi usually unwraps to inner "data", but support both shapes safely
+        const direct = VerifyPayloadSchema.safeParse(raw);
+        if (direct.success) return direct.data;
+
+        const env = VerifyEnvelopeSchema.safeParse(raw);
+        if (env.success) return env.data.data;
+
+        // Treat unknown shapes as an error -> hook goes into isError state
+        throw new Error("Invalid verification response shape");
+      },
     }),
 
     getCertificationPdf: b.query<Blob, string>({
@@ -2372,6 +2398,8 @@ export const {
   useMyCertificationQuery,
   useVerifyCertificationQuery,
   useGetCertificationPdfQuery,
+  useLazyVerifyCertificationQuery,
+  useLazyGetCertificationPdfQuery
 } = certApi;
 
 ```
@@ -3427,6 +3455,8 @@ import AppLayout from "@/components/layouts/AppLayout";
 import PublicAuthLayout from "@/components/layouts/PublicAuthLayout";
 import ExamStepPage from "@/features/exam/pages/ExamStepPage";
 import ExamResultPage from "@/features/exam/pages/ExamResultPage";
+import VerifyCertificationPage from "@/features/cert/pages/VerifyCertificationPage";
+import MyCertificationPage from "@/features/cert/pages/MyCertificationPage";
 
 export const router = createBrowserRouter([
   { path: "/", element: <Navigate to="/student/dashboard" replace /> },
@@ -3440,6 +3470,7 @@ export const router = createBrowserRouter([
       { path: "/verify-otp", element: <VerifyOtpPage /> },
       { path: "/forgot", element: <ForgotPasswordPage /> },
       { path: "/reset", element: <ResetPasswordPage /> },
+      { path: "/certifications/verify", element: <VerifyCertificationPage /> },
     ],
   },
   // Protected area (shows Navbar)
@@ -3467,6 +3498,16 @@ export const router = createBrowserRouter([
             children: [
               { path: "/student/exam/step/:n", element: <ExamStepPage /> },
               { path: "/student/exam/result", element: <ExamResultPage /> },
+            ],
+          },
+          // student view of their certification
+          {
+            element: <RoleGuard allow={["student"]} />,
+            children: [
+              {
+                path: "/student/certification",
+                element: <MyCertificationPage />,
+              },
             ],
           },
           // Supervisor-only placeholder (optional)
@@ -4352,18 +4393,300 @@ export default function ExamResultPage() {
 ```
 
 ```javascript
+// src/utils/download.ts
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 ```
 
 ```javascript
+// src/features/cert/components/CertificationCard.tsx
+import { useMemo } from "react";
+import dayjs from "dayjs";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { downloadBlob } from "@/utils/download";
+import { useLazyGetCertificationPdfQuery } from "@/services/cert.api";
+import type { ICertification } from "@/services/cert.api";
+import { toast } from "sonner";
+import { extractApiError } from "@/utils/extractApiError";
+
+type Props = { cert: ICertification };
+
+export default function CertificationCard({ cert }: Props) {
+  const [getPdf, { isFetching }] = useLazyGetCertificationPdfQuery();
+
+  const issuedLabel = useMemo(
+    () => dayjs(cert.issuedAt).format("YYYY-MM-DD"),
+    [cert.issuedAt],
+  );
+
+  const onDownload = async () => {
+    try {
+      const blob = await getPdf(cert._id).unwrap();
+      downloadBlob(blob, `certificate-${cert.certificateId}.pdf`);
+    } catch (e) {
+      toast.error(extractApiError(e));
+    }
+  };
+
+  return (
+    <Card className="max-w-xl">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          My Certification
+          <Badge variant="outline">{cert.highestLevel}</Badge>
+        </CardTitle>
+        <CardDescription>
+          Issued on <span className="font-medium">{issuedLabel}</span>
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <div className="text-sm grid gap-1">
+          <div>
+            <span className="text-muted-foreground">Certificate ID:</span>{" "}
+            <span className="font-mono">{cert.certificateId}</span>
+          </div>
+          {!!cert.pdfUrl && (
+            <div className="text-muted-foreground break-all">
+              PDF URL: <span className="font-mono">{cert.pdfUrl}</span>
+            </div>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={onDownload} disabled={isFetching}>
+            {isFetching ? "Preparing…" : "Download PDF"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 ```
 
 ```javascript
+// src/features/cert/pages/MyCertificationPage.tsx
+import { Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import CertificationCard from "../components/CertificationCard";
+import { useMyCertificationQuery } from "@/services/cert.api";
 
+export default function MyCertificationPage() {
+  const { data, isLoading } = useMyCertificationQuery();
+
+  if (isLoading) {
+    return (
+      <Card className="max-w-xl">
+        <CardContent className="p-6">
+          <div className="h-5 w-2/3 animate-pulse rounded bg-muted mb-4" />
+          <div className="h-10 w-40 animate-pulse rounded bg-muted" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const cert = data?.certification ?? null;
+
+  return cert ? (
+    <CertificationCard cert={cert} />
+  ) : (
+    <Card className="max-w-xl">
+      <CardHeader>
+        <CardTitle>No certification yet</CardTitle>
+        <CardDescription>
+          Complete the 3-step assessment to earn a certification. (A PDF can be
+          generated after you achieve at least A1.)
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex gap-2">
+        <Button asChild variant="outline">
+          <Link to="/student/exam/step/1">Start Step 1</Link>
+        </Button>
+        <Button asChild>
+          <Link to="/certifications/verify">Verify a certificate</Link>
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
 ```
 
 ```javascript
+// src/features/cert/pages/VerifyCertificationPage.tsx
+import { useEffect, useMemo } from "react";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { useLocation } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { useLazyVerifyCertificationQuery } from "@/services/cert.api";
+import { toast } from "sonner";
+import { extractApiError } from "@/utils/extractApiError";
+import { Skeleton } from "@/components/ui/skeleton";
+
+const Schema = z.object({
+  certificateId: z.string().min(6, "Enter a valid ID"),
+});
+type FormValues = z.infer<typeof Schema>;
+
+function useQueryId() {
+  const qs = new URLSearchParams(useLocation().search);
+  return qs.get("id") ?? "";
+}
+
+export default function VerifyCertificationPage() {
+  const initialId = useQueryId();
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isValid },
+    watch,
+  } = useForm<FormValues>({
+    resolver: zodResolver(Schema),
+    defaultValues: { certificateId: initialId },
+    mode: "onChange",
+  });
+
+  const id = watch("certificateId");
+
+  const [verify, { data, isFetching, isError, isUninitialized, error }] =
+    useLazyVerifyCertificationQuery();
+
+  useEffect(() => {
+    if (!initialId) return;
+    (async () => {
+      try {
+        await verify(initialId).unwrap();
+        toast.success("Certificate is valid");
+      } catch (e) {
+        toast.error(extractApiError(e));
+      }
+    })();
+  }, [initialId, verify]);
+
+  // const verified = data?.valid === true;
+  const desc = useMemo(() => {
+    if (isUninitialized && !initialId)
+      return "Enter a certificate ID to verify";
+    if (isFetching) return "Checking…";
+    if (isError) return "Not found or invalid";
+    if (data) return "Valid certificate";
+    return "Enter a certificate ID to verify";
+  }, [isUninitialized, initialId, isFetching, isError, data]);
+
+  const onSubmit = async ({ certificateId }: FormValues) => {
+    try {
+      await verify(certificateId).unwrap();
+      toast.success("Certificate is valid");
+    } catch (e) {
+      toast.error(extractApiError(e));
+    }
+  };
+
+  const inlineError = isError ? extractApiError(error) : null;
+
+  return (
+    <div className="mx-auto w-full max-w-xl">
+      <Card>
+        <CardHeader>
+          <CardTitle>Verify Certification</CardTitle>
+          <CardDescription>{desc}</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="grid gap-3">
+            <div className="grid gap-2">
+              <Label htmlFor="certificateId">Certificate ID</Label>
+              <Input
+                id="certificateId"
+                {...register("certificateId")}
+                aria-invalid={!!errors.certificateId}
+                disabled={isFetching}
+              />
+              {errors.certificateId?.message && (
+                <p className="text-sm text-destructive">
+                  {errors.certificateId.message}
+                </p>
+              )}
+            </div>
+            <Button type="submit" disabled={!id || !isValid || isFetching}>
+              {isFetching ? "Verifying…" : "Verify"}
+            </Button>
+            {inlineError && (
+              <p role="alert" className="text-sm text-destructive">
+                {inlineError}
+              </p>
+            )}
+          </form>
+
+          {/* Loading skeleton */}
+          {isFetching && (
+            <div className="rounded-md border p-3">
+              <div className="grid gap-2">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-4 w-32" />
+              </div>
+            </div>
+          )}
+
+          {!isFetching && data && (
+            <div className="rounded-md border p-3 text-sm">
+              <div>
+                <span className="text-muted-foreground">Holder:</span>{" "}
+                {data.user.name || "-"}
+              </div>
+              <div>
+                <span className="text-muted-foreground">Level:</span>{" "}
+                {data.highestLevel || "-"}
+              </div>
+              <div>
+                <span className="text-muted-foreground">Issued:</span>{" "}
+                {data.issuedAt
+                  ? new Date(data.issuedAt).toLocaleDateString(undefined, {
+                      year: "numeric",
+                      month: "2-digit",
+                      day: "2-digit",
+                    })
+                  : "-"}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 ```
 
