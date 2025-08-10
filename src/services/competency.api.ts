@@ -1,7 +1,7 @@
 // src/services/competency.api.ts
 import { baseApi } from "./baseApi";
-import type { PageMeta } from "@/types/api";
-import { normalizeList } from "@/types/api";
+import type { ApiOk } from "@/types/api";
+import { toPager, type PagerMeta } from "@/types/api";
 
 export type ICompetency = {
   _id: string;
@@ -10,23 +10,43 @@ export type ICompetency = {
   description?: string;
   createdAt: string;
   updatedAt: string;
+  __v?: number;
 };
+
+export type ListCompetenciesArgs = {
+  page?: number;
+  limit?: number;
+  q?: string;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+};
+
+export type ListCompetenciesResult = { items: ICompetency[]; meta: PagerMeta };
 
 export const competencyApi = baseApi.injectEndpoints({
   endpoints: (b) => ({
     listCompetencies: b.query<
-      { items: ICompetency[]; meta?: PageMeta },
-      {
-        page?: number;
-        limit?: number;
-        q?: string;
-        sortBy?: "name" | "code" | "createdAt";
-        sortOrder?: "asc" | "desc";
-      } | void
+      ListCompetenciesResult,
+      ListCompetenciesArgs | void
     >({
-      query: (params) => ({ url: "/competencies", params }),
-      transformResponse: (raw: unknown) => normalizeList<ICompetency>(raw),
-      providesTags: ["Competencies"],
+      query: (args) => ({
+        url: "/competencies",
+        params: args,
+      }),
+      transformResponse: (raw: ApiOk<ICompetency[]>) => ({
+        items: raw.data,
+        meta: toPager(raw.meta),
+      }),
+      providesTags: (res) =>
+        res
+          ? [
+              ...res.items.map((c) => ({
+                type: "Competencies" as const,
+                id: c._id,
+              })),
+              { type: "Competencies" as const, id: "LIST" },
+            ]
+          : [{ type: "Competencies" as const, id: "LIST" }],
     }),
 
     getCompetency: b.query<{ competency: ICompetency }, string>({
@@ -47,15 +67,16 @@ export const competencyApi = baseApi.injectEndpoints({
     }),
 
     createCompetency: b.mutation<
-      { competency: ICompetency },
-      { code: string; name: string; description?: string }
+      ICompetency,
+      Pick<ICompetency, "code" | "name" | "description">
     >({
       query: (body) => ({ url: "/competencies", method: "POST", data: body }),
-      invalidatesTags: ["Competencies"],
+      transformResponse: (raw: ApiOk<ICompetency>) => raw.data,
+      invalidatesTags: [{ type: "Competencies", id: "LIST" }],
     }),
 
     updateCompetency: b.mutation<
-      { competency: ICompetency },
+      ICompetency,
       {
         id: string;
         patch: Partial<Pick<ICompetency, "code" | "name" | "description">>;
@@ -66,12 +87,17 @@ export const competencyApi = baseApi.injectEndpoints({
         method: "PATCH",
         data: patch,
       }),
-      invalidatesTags: ["Competencies"],
+      transformResponse: (raw: ApiOk<ICompetency>) => raw.data,
+      invalidatesTags: (_res, _err, arg) => [
+        { type: "Competencies", id: arg.id },
+        { type: "Competencies", id: "LIST" },
+      ],
     }),
 
-    deleteCompetency: b.mutation<{ deleted: true }, string>({
+    deleteCompetency: b.mutation<{ ok: boolean }, string>({
       query: (id) => ({ url: `/competencies/${id}`, method: "DELETE" }),
-      invalidatesTags: ["Competencies"],
+      transformResponse: () => ({ ok: true }),
+      invalidatesTags: [{ type: "Competencies", id: "LIST" }],
     }),
   }),
 });

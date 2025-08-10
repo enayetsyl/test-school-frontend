@@ -1,15 +1,24 @@
 // src/services/admin.api.ts
 import { baseApi } from "./baseApi";
-import type { PageMeta } from "@/types/api";
-import { normalizeList } from "@/types/api";
+import type { ApiOk } from "@/types/api";
+import { toPager, type PagerMeta } from "@/types/api";
 
 export type AdminSession = {
   id: string;
-  user: { id: string; name: string };
+  user?: { id: string; name?: string };
   status: "pending" | "active" | "submitted" | "cancelled";
   step: 1 | 2 | 3;
   videoRecordingMeta?: { chunks?: number };
 };
+
+export type ListSessionsArgs = {
+  page?: number;
+  limit?: number;
+  q?: string;
+  status?: AdminSession["status"];
+  step?: 1 | 2 | 3;
+};
+export type ListSessionsResult = { items: AdminSession[]; meta: PagerMeta };
 
 export type AuditLog = {
   id: string;
@@ -19,8 +28,10 @@ export type AuditLog = {
   message: string;
   createdAt: string;
 };
+export type ListAuditLogsArgs = { page?: number; limit?: number; q?: string };
+export type ListAuditLogsResult = { items: AuditLog[]; meta: PagerMeta };
 
-export type SystemConfig = {
+export type Config = {
   timePerQuestionSec: number;
   retakeLockMinutes: number;
   maxRetakes: number;
@@ -29,22 +40,13 @@ export type SystemConfig = {
 
 export const adminApi = baseApi.injectEndpoints({
   endpoints: (b) => ({
-    listSessions: b.query<
-      { items: AdminSession[]; meta?: PageMeta },
-      {
-        page?: number;
-        limit?: number;
-        q?: string;
-        status?: "pending" | "active" | "submitted" | "cancelled";
-        step?: 1 | 2 | 3;
-        userId?: string;
-        from?: string;
-        to?: string;
-      } | void
-    >({
-      query: (params) => ({ url: "/admin/sessions", params }),
-      transformResponse: (raw: unknown) => normalizeList<AdminSession>(raw),
-      providesTags: ["Sessions"],
+    listSessions: b.query<ListSessionsResult, ListSessionsArgs | void>({
+      query: (args) => ({ url: "/admin/sessions", params: args }),
+      transformResponse: (raw: ApiOk<AdminSession[]>) => ({
+        items: raw.data,
+        meta: toPager(raw.meta),
+      }),
+      providesTags: [{ type: "Sessions", id: "LIST" }],
     }),
 
     getSession: b.query<{ session: AdminSession }, string>({
@@ -63,35 +65,29 @@ export const adminApi = baseApi.injectEndpoints({
       providesTags: (_r, _e, id) => [{ type: "Sessions", id }],
     }),
 
-    listAuditLogs: b.query<
-      { items: AuditLog[]; meta?: PageMeta },
-      {
-        page?: number;
-        limit?: number;
-        actorId?: string;
-        action?: string;
-        resource?: string;
-        from?: string;
-        to?: string;
-        q?: string;
-      } | void
-    >({
-      query: (params) => ({ url: "/admin/audit-logs", params }),
-      transformResponse: (raw: unknown) => normalizeList<AuditLog>(raw),
+    listAuditLogs: b.query<ListAuditLogsResult, ListAuditLogsArgs | void>({
+      query: (args) => ({ url: "/admin/audit-logs", params: args }),
+      transformResponse: (raw: ApiOk<AuditLog[]>) => ({
+        items: raw.data,
+        meta: toPager(raw.meta),
+      }),
+      providesTags: [{ type: "AuditLogs", id: "LIST" }],
     }),
 
-    getConfig: b.query<SystemConfig, void>({
+    getConfig: b.query<Config, void>({
       query: () => ({ url: "/admin/config" }),
-      providesTags: ["Config"],
+      transformResponse: (raw: ApiOk<Config>) => raw.data,
+      providesTags: [{ type: "Config", id: "SINGLE" }],
     }),
 
-    updateConfig: b.mutation<SystemConfig, Partial<SystemConfig>>({
+    updateConfig: b.mutation<Config, Partial<Config>>({
       query: (patch) => ({
         url: "/admin/config",
         method: "PATCH",
         data: patch,
       }),
-      invalidatesTags: ["Config"],
+      transformResponse: (raw: ApiOk<Config>) => raw.data,
+      invalidatesTags: [{ type: "Config", id: "SINGLE" }],
     }),
   }),
 });

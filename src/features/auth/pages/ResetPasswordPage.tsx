@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { useLocation, useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useResetMutation } from "@/services/auth.api";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,20 +12,21 @@ import { toast } from "sonner";
 import { extractApiError } from "@/utils/extractApiError";
 import { useEffect } from "react";
 
-function useEmailFromQuery(): { email: string; otp: string } {
-  const search = new URLSearchParams(useLocation().search);
-  return { email: search.get("email") ?? "", otp: search.get("otp") ?? "" };
-}
+type ResetForm = {
+  email: string;
+  otp: string;
+  newPassword: string;
+};
 
 const Schema = z.object({
-  email: z.string().email(),
+  email: z.email(),
   otp: z.string().length(6, "OTP must be 6 digits"),
   newPassword: z.string().min(8, "Password must be at least 8 characters"),
 });
 type FormValues = z.infer<typeof Schema>;
 
 export default function ResetPasswordPage() {
-  const { email, otp } = useEmailFromQuery();
+  const [params] = useSearchParams();
   const navigate = useNavigate();
   const [reset, { isLoading }] = useResetMutation();
 
@@ -34,18 +35,17 @@ export default function ResetPasswordPage() {
     handleSubmit,
     setValue,
     formState: { errors },
-  } = useForm<FormValues>({
+  } = useForm<ResetForm>({
     resolver: zodResolver(Schema),
-    defaultValues: { email, otp, newPassword: "" },
+    defaultValues: { email: "", otp: "", newPassword: "" },
   });
 
   useEffect(() => {
-    setValue("email", email, { shouldValidate: false });
-    if (otp) setValue("otp", otp, { shouldValidate: false });
-  }, [email, otp, setValue]);
-
-  // keep email field synced (read-only)
-  if (email) setValue("email", email, { shouldValidate: false });
+    const emailParam = params.get("email");
+    const otpParam = params.get("otp");
+    if (emailParam) setValue("email", emailParam, { shouldValidate: false });
+    if (otpParam) setValue("otp", otpParam, { shouldValidate: false });
+  }, [params, setValue]);
 
   const onSubmit = async (values: FormValues) => {
     try {

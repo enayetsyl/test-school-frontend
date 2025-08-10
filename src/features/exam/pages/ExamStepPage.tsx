@@ -1,4 +1,3 @@
-// src/features/exam/pages/ExamStepPage.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
@@ -47,11 +46,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import FullscreenGate from "../components/FullscreenGate";
+// ⛔ removed FullscreenGate / useFullscreen
 import { useKeyNav } from "../hooks/use-key-nav";
 import { useVideoProctor } from "../hooks/use-video-proctor";
 import QuestionSkeleton from "../components/QuestionSkeleton";
 import { useFullscreen } from "../hooks/use-fullscreen";
+import FullscreenGate from "../components/FullscreenGate";
 
 function pickRandom<T>(arr: T[], n: number): T[] {
   const copy = arr.slice();
@@ -63,7 +63,6 @@ function pickRandom<T>(arr: T[], n: number): T[] {
 }
 
 function getErrorMessage(e: unknown): string {
-  // RTKQ baseQuery error shape
   if (typeof e === "object" && e !== null && "data" in e) {
     const data = (e as { data?: { message?: string } }).data;
     if (data?.message) return data.message;
@@ -85,32 +84,66 @@ export default function ExamStepPage() {
   const navigate = useNavigate();
 
   const exam = useSelector((s: RootState) => s.exam);
-  // const answeredCount = Object.keys(exam.answers).length;
 
   const [startExam, { isLoading: isStarting }] = useStartExamMutation();
   const [sendAnswer] = useAnswerMutation();
   const [submit, { isLoading: isSubmitting }] = useSubmitMutation();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // near other useState calls
+  const [resultOpen, setResultOpen] = useState(false);
+  const [result, setResult] = useState<{
+    status: "submitted" | "expired" | "abandoned";
+    scorePct: number;
+    awardedLevel?: string;
+    proceedNext: boolean;
+  } | null>(null);
 
-  // Fetch pool for both levels and assemble 44 questions (22 per level) client-side
+  const safeStep: Step = (exam?.step as Step) ?? 1;
+  const nextStep: Step | null = safeStep < 3 ? ((safeStep + 1) as Step) : null;
+
+  const goDashboard = () => navigate("/student/dashboard", { replace: true });
+  const startNext = () =>
+    nextStep && navigate(`/student/exam/step/${nextStep}`, { replace: true });
+  const retake = () =>
+    navigate(`/student/exam/step/${safeStep}`, { replace: true });
+
+  // fetch pools (22 per level)
   const [lv1, lv2] = levelsForStep(step);
   const q1 = useListQuestionsQuery({ level: lv1 as QuestionLevel, limit: 100 });
   const q2 = useListQuestionsQuery({ level: lv2 as QuestionLevel, limit: 100 });
 
-  // Kick off session on mount
+  // 🔹 reset ONLY when unmounting this page
+  useEffect(() => {
+    return () => {
+      dispatch(reset());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const isFullscreen = useFullscreen();
+
+  const ensureFullscreen = async () => {
+    if (!document.fullscreenElement) {
+      try {
+        await document.documentElement.requestFullscreen();
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  // 🔹 start session ONLY when step changes
   useEffect(() => {
     let cancelled = false;
 
     const init = async () => {
       try {
-        // Start exam session on server
         const res = await startExam({
           step,
           screen: { width: window.innerWidth, height: window.innerHeight },
         }).unwrap();
         if (cancelled) return;
 
-        // Build local questionnaire once pools are ready
         const [r1, r2] = await Promise.all([q1.refetch(), q2.refetch()]);
         const items1 = ((r1 as { data?: { items?: IQuestion[] } }).data
           ?.items ?? []) as IQuestion[];
@@ -126,8 +159,8 @@ export default function ExamStepPage() {
         const chosen1 = pickRandom(items1, 22);
         const chosen2 = pickRandom(items2, 22);
         const ordered = [...chosen1, ...chosen2];
+        const ids = ordered.map(getId).filter(Boolean);
 
-        const ids = ordered.map((q) => getId(q)).filter(Boolean);
         if (ids.length === 0) {
           toast.error("Questions loaded but missing IDs.");
           navigate("/student/dashboard", { replace: true });
@@ -142,6 +175,13 @@ export default function ExamStepPage() {
             questionIds: ids,
           }),
         );
+
+        console.log("[begin]", {
+          sessionId: res.sessionId,
+          step,
+          deadlineAt: res.deadlineAt,
+          nowISO: new Date().toISOString(),
+        });
       } catch (e: unknown) {
         toast.error(getErrorMessage(e));
         navigate("/student/dashboard", { replace: true });
@@ -151,16 +191,16 @@ export default function ExamStepPage() {
     void init();
     return () => {
       cancelled = true;
-      dispatch(reset());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dispatch, navigate, startExam, step]);
+  }, [step]);
 
-  // Countdown & proctoring
+  // timer & proctoring
   const { label, expired } = useCountdown(exam.deadlineAt ?? undefined);
   useProctoring(exam.sessionId);
+  useVideoProctor(exam.sessionId, exam.status === "active");
 
-  // Compute current question VM
+  // questions map
   const questions = useMemo(() => {
     const map = new Map<string, IQuestion>();
     (q1.data?.items ?? []).forEach((x) => map.set(getId(x), x as IQuestion));
@@ -185,14 +225,14 @@ export default function ExamStepPage() {
   const total = exam.questionIds.length || 44;
   const unansweredCount = total - answeredSet.size;
 
-  // Auto-submit on expiry
+  // auto-submit on expiry
   useEffect(() => {
     if (!expired || !exam.sessionId || exam.status !== "active") return;
     void onSubmit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expired]);
 
-  // Warn on unload
+  // warn on unload
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       if (exam.status === "active") {
@@ -206,18 +246,23 @@ export default function ExamStepPage() {
 
   const onSelect = async (idx: number) => {
     if (!current || !exam.sessionId) return;
-    if (!isFullscreen) {
-      toast.error("Enter fullscreen to answer.");
+    if (exam.status !== "active") return;
+    // Gate on real fullscreen state (not just hook)
+    if (!document.fullscreenElement) {
       await ensureFullscreen();
-      return;
+      if (!document.fullscreenElement) {
+        // still not granted → block answering
+        return;
+      }
     }
+    // record locally
     dispatch(recordAnswer({ questionId: current._id, selectedIndex: idx }));
-    // send to server with elapsed
+
+    // best-effort send with elapsed
     const elapsedMs = Math.max(
       0,
       Date.now() - (exam.currentShownAt ?? Date.now()),
     );
-
     try {
       await sendAnswer({
         sessionId: exam.sessionId,
@@ -226,9 +271,9 @@ export default function ExamStepPage() {
         elapsedMs,
       }).unwrap();
     } catch {
-      // best-effort; UI keeps moving
+      // ignore; UI continues
     }
-    // Auto-advance
+
     if (exam.currentIndex < exam.questionIds.length - 1) {
       dispatch(goNext());
     }
@@ -236,22 +281,24 @@ export default function ExamStepPage() {
 
   const onSubmit = async () => {
     if (!exam.sessionId) return;
+
     if (!document.fullscreenElement) {
-      toast.error("Please enter fullscreen to submit.");
-      return;
+      await ensureFullscreen();
+      if (!document.fullscreenElement) return; // require fullscreen to submit
     }
+
     try {
-      const result = await submit({ sessionId: exam.sessionId }).unwrap();
+      const res = await submit({ sessionId: exam.sessionId }).unwrap();
       dispatch(setSubmitted());
-      navigate("/student/exam/result", {
-        replace: true,
-        state: {
-          scorePct: result.scorePct,
-          awardedLevel: result.awardedLevel,
-          proceedNext: result.proceedNext,
-          step,
-        },
+
+      console.log("res", res);
+      setResult({
+        status: res.data.status,
+        scorePct: res.data.scorePct,
+        awardedLevel: res.data.awardedLevel,
+        proceedNext: res.data.proceedNext,
       });
+      setResultOpen(true);
     } catch {
       toast.error("Could not submit. Please try again.");
     } finally {
@@ -263,26 +310,11 @@ export default function ExamStepPage() {
     ? { id: current._id, prompt: current.prompt, options: current.options }
     : undefined;
 
-  // const total = exam.questionIds.length || 44;
-
+  // keyboard nav (always on now)
   useKeyNav(
-    () => isFullscreen && dispatch(goPrev()),
-    () => isFullscreen && dispatch(goNext()),
+    () => dispatch(goPrev()),
+    () => dispatch(goNext()),
   );
-
-  useVideoProctor(exam.sessionId, exam.status === "active");
-
-  const isFullscreen = useFullscreen();
-
-  const ensureFullscreen = async () => {
-    if (!document.fullscreenElement) {
-      try {
-        await document.documentElement.requestFullscreen();
-      } catch {
-        /* ignore */
-      }
-    }
-  };
 
   return (
     <div className="grid gap-6">
@@ -302,14 +334,22 @@ export default function ExamStepPage() {
         <CardContent className="flex items-center gap-2">
           <Button
             variant="outline"
-            disabled={!isFullscreen || exam.currentIndex === 0}
+            disabled={
+              !isFullscreen ||
+              exam.currentIndex === 0 ||
+              exam.status !== "active"
+            }
             onClick={() => dispatch(goPrev())}
           >
             Prev
           </Button>
           <Button
             variant="outline"
-            disabled={!isFullscreen || exam.currentIndex >= total - 1}
+            disabled={
+              !isFullscreen ||
+              exam.currentIndex >= total - 1 ||
+              exam.status !== "active"
+            }
             onClick={() => dispatch(goNext())}
           >
             Next
@@ -327,15 +367,18 @@ export default function ExamStepPage() {
           </Button>
         </CardContent>
       </Card>
+
       <FullscreenGate />
       {/* Palette */}
       <QuestionPalette
         total={total}
         currentIndex={exam.currentIndex}
         answered={answeredSet}
-        onJump={(i) => dispatch(setIndex(i))}
-        locked={!isFullscreen}
-        onRequestFullscreen={ensureFullscreen}
+        onJump={(i) =>
+          isFullscreen && exam.status === "active"
+            ? dispatch(setIndex(i))
+            : ensureFullscreen()
+        }
       />
 
       {/* Question */}
@@ -368,6 +411,63 @@ export default function ExamStepPage() {
             <AlertDialogAction onClick={onSubmit} disabled={isSubmitting}>
               {isSubmitting ? "Submitting…" : "Yes, submit"}
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Result modal after submission */}
+      <AlertDialog
+        open={resultOpen}
+        // ⭐ when user closes, leave the page
+        onOpenChange={(open) => {
+          setResultOpen(open);
+          if (!open) {
+            goDashboard(); // or navigate("/student/exam/result", { replace: true })
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Step {safeStep} result</AlertDialogTitle>
+            <AlertDialogDescription>
+              {result ? (
+                <div className="grid gap-2 text-sm">
+                  <div>
+                    <span className="font-medium">Status:</span> {result.status}
+                  </div>
+                  <div>
+                    <span className="font-medium">Score:</span>{" "}
+                    {result.scorePct.toFixed(2)}%
+                  </div>
+                  <div>
+                    <span className="font-medium">Awarded level:</span>{" "}
+                    {result.awardedLevel ?? "-"}
+                  </div>
+                  <div>
+                    <span className="font-medium">Eligible for next step:</span>{" "}
+                    {String(!!result.proceedNext)}
+                  </div>
+                </div>
+              ) : (
+                "Submitting…"
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex gap-2">
+            {/* ⭐ Close navigates away too */}
+            <AlertDialogCancel onClick={goDashboard}>Close</AlertDialogCancel>
+
+            <Button variant="outline" onClick={goDashboard}>
+              Go to Dashboard
+            </Button>
+
+            {nextStep && result?.proceedNext ? (
+              <Button onClick={startNext}>Start step {nextStep}</Button>
+            ) : safeStep === 3 ? (
+              <Button onClick={goDashboard}>Finish</Button>
+            ) : (
+              <Button onClick={retake}>Retake step {safeStep}</Button>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

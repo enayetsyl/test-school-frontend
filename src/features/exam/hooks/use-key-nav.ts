@@ -1,4 +1,3 @@
-// src/features/exam/hooks/use-key-nav.ts
 import { useEffect } from "react";
 export function useKeyNav(onPrev: () => void, onNext: () => void) {
   useEffect(() => {

@@ -18,7 +18,7 @@ export default function ExamQuestion({
   onSelect: (index: number) => void;
 }) {
   return (
-    <Card className="bg-card border-border">
+    <Card className="bg-card border-border max-w-2xl">
       <CardHeader>
         <CardTitle className="text-lg">{q.prompt}</CardTitle>
       </CardHeader>
@@ -28,13 +28,13 @@ export default function ExamQuestion({
             key={idx}
             type="button"
             variant={selectedIndex === idx ? "default" : "outline"}
-            className="justify-start"
+            className="max-w-full justify-start items-start text-left whitespace-normal break-words h-auto py-2"
             onClick={() => onSelect(idx)}
           >
-            <span className="mr-2 rounded-md border px-2 py-0.5 text-xs">
+            <span className="mr-2 shrink-0 rounded-md border px-2 py-0.5 text-xs">
               {String.fromCharCode(65 + idx)}
             </span>
-            {opt}
+            <span className="flex-1">{opt}</span>
           </Button>
         ))}
       </CardContent>

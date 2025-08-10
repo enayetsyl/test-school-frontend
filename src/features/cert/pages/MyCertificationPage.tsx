@@ -1,51 +1,128 @@
-// src/features/cert/pages/MyCertificationPage.tsx
-import { Link } from "react-router-dom";
-import { Button } from "@/components/ui/button";
+import { useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
-  CardDescription,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
 import CertificationCard from "../components/CertificationCard";
-import { useMyCertificationQuery } from "@/services/cert.api";
+import {
+  useMyCertificationQuery,
+  type ICertification,
+  type HighestLevel,
+} from "@/services/cert.api";
+
+function nextStepFrom(level: HighestLevel | null): 1 | 2 | 3 | null {
+  if (!level) return 1;
+  if (level === "A1" || level === "A2") return 2;
+  if (level === "B1" || level === "B2") return 3;
+  return null; // C1/C2 => completed
+}
 
 export default function MyCertificationPage() {
-  const { data, isLoading } = useMyCertificationQuery();
+  const navigate = useNavigate();
+  const { data, isFetching, isError, error, refetch } =
+    useMyCertificationQuery();
 
-  if (isLoading) {
+  // data?.certification may be undefined if the student has none yet
+  const cert: ICertification | undefined = data?.certification ?? undefined;
+
+  const highestLevel: HighestLevel | null = cert?.highestLevel ?? null;
+  const nextStep = useMemo(() => nextStepFrom(highestLevel), [highestLevel]);
+
+  useEffect(() => {
+    if (isError) {
+      const message =
+        (error as { data?: { message?: string } })?.data?.message ??
+        "Failed to load certification.";
+      toast.error(message);
+    }
+  }, [isError, error]);
+
+  if (isFetching) {
     return (
-      <Card className="max-w-xl">
-        <CardContent className="p-6">
-          <div className="h-5 w-2/3 animate-pulse rounded bg-muted mb-4" />
-          <div className="h-10 w-40 animate-pulse rounded bg-muted" />
-        </CardContent>
-      </Card>
+      <div className="mx-auto w-full max-w-3xl">
+        <Card className="max-w-xl">
+          <CardHeader>
+            <CardTitle>My Certification</CardTitle>
+            <CardDescription>Loading your certificate…</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            <Skeleton className="h-6 w-44" />
+            <Skeleton className="h-5 w-72" />
+            <Skeleton className="h-10 w-40" />
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
-  const cert = data?.certification ?? null;
+  if (!cert) {
+    // Empty state: no certificate yet
+    return (
+      <div className="mx-auto w-full max-w-3xl">
+        <Card className="max-w-xl">
+          <CardHeader>
+            <CardTitle>No certificate yet</CardTitle>
+            <CardDescription>
+              You haven’t completed a certification. Start your exam to earn
+              one.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            <Button
+              onClick={() =>
+                nextStep
+                  ? navigate(`/student/exam/step/${nextStep}`)
+                  : navigate("/student/exam/result")
+              }
+            >
+              {nextStep ? `Start exam (Step ${nextStep})` : "View status"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => navigate("/student/exam/result")}
+            >
+              See status
+            </Button>
+            <Button variant="ghost" onClick={() => refetch()}>
+              Refresh
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
-  return cert ? (
-    <CertificationCard cert={cert} />
-  ) : (
-    <Card className="max-w-xl">
-      <CardHeader>
-        <CardTitle>No certification yet</CardTitle>
-        <CardDescription>
-          Complete the 3-step assessment to earn a certification. (A PDF can be
-          generated after you achieve at least A1.)
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex gap-2">
-        <Button asChild variant="outline">
-          <Link to="/student/exam/step/1">Start Step 1</Link>
+  // Has certificate → render your existing card
+  return (
+    <div className="mx-auto w-full max-w-3xl">
+      <CertificationCard cert={cert} />
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button
+          variant="outline"
+          onClick={() => navigate("/student/exam/result")}
+        >
+          See status
         </Button>
-        <Button asChild>
-          <Link to="/certifications/verify">Verify a certificate</Link>
+        <Button
+          onClick={() =>
+            nextStep
+              ? navigate(`/student/exam/step/${nextStep}`)
+              : navigate("/student/exam/result")
+          }
+          disabled={!nextStep}
+        >
+          {nextStep
+            ? `Start next exam (Step ${nextStep})`
+            : "Max level reached"}
         </Button>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

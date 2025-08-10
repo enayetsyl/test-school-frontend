@@ -9,20 +9,21 @@ import { Button } from "@/components/ui/button";
 import AuthCard from "../components/AuthCard";
 import { toast } from "sonner";
 import { extractApiError } from "@/utils/extractApiError";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, Navigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import type { RootState } from "@/store/store";
 import { defaultRouteForRole } from "../route-helpers";
+import type { Role } from "@/types/user";
 
 const Schema = z.object({
-  email: z.string().email(),
+  email: z.email(),
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
 type FormValues = z.infer<typeof Schema>;
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const role = useSelector((s: RootState) => s.auth.user?.role);
+  const role = useSelector((s: RootState) => s.auth.user?.role ?? null);
 
   const [login, { isLoading }] = useLoginMutation();
   const {
@@ -38,19 +39,17 @@ export default function LoginPage() {
     try {
       const res = await login(values).unwrap();
       toast.success("Logged in");
+      console.log("res", res);
       const to = defaultRouteForRole(res.user.role);
       navigate(to, { replace: true });
     } catch (e: unknown) {
       toast.error(extractApiError(e));
     }
   };
-
-  // If already logged in, push to default route
+  // ✅ declarative redirect — NO navigate() during render
   if (role) {
-    navigate(defaultRouteForRole(role), { replace: true });
-    return null;
+    return <Navigate to={defaultRouteForRole(role as Role)} replace />;
   }
-
   return (
     <AuthCard
       title="Sign in"
