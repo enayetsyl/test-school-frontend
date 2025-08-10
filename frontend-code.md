@@ -6665,6 +6665,65 @@ export default function VerifyCertificationPage() {
 ```
 
 ```javascript
+From the specification and frontend handbook, a student should have access to these core features in their login area:
+
+1. Exam Features
+
+View their dashboard with current certification level (if any) and next available step.
+
+Start an exam for Step 1, 2, or 3 (only if eligible).
+
+Exam environment controls:
+
+Countdown timer (default 1 min per question).
+
+Auto-submit on time expiry.
+
+Block right-click / copy / paste.
+
+Detect tab blur and send violation reports.
+
+(Optional) Live video recording & chunk uploads.
+
+Answer questions and submit exam.
+
+See results (score %, awarded level, proceed next = true/false).
+
+2. Certification Features
+
+View my certificate (/certifications/me): highest level achieved, issued date.
+
+Download their certificate PDF (if available).
+
+Access public certificate verification page to check any certificate by ID.
+
+3. Account / Auth
+
+View/update profile info (at least name & email in /users/me).
+
+Logout.
+
+That means the student section should at least implement:
+
+/student/dashboard
+
+/student/exam/step/:n (exam page)
+
+/student/result
+
+My Certificate page (with download)
+
+Public certificate verify page
+
+Everything else (competencies CRUD, question management, user management, sessions list, config) is admin/supervisor-only.
+
+
+
+
+
+
+
+Ask ChatGPT
 
 ```
 

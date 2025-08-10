@@ -1,32 +1,27 @@
 // src/features/exam/components/FullscreenGate.tsx
-import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { useFullscreen } from "../hooks/use-fullscreen";
 
 export default function FullscreenGate() {
-  const [isFs, setIsFs] = useState<boolean>(!!document.fullscreenElement);
-  useEffect(() => {
-    const onChange = () => setIsFs(!!document.fullscreenElement);
-    document.addEventListener("fullscreenchange", onChange);
-    return () => document.removeEventListener("fullscreenchange", onChange);
-  }, []);
-
-  if (isFs) return null;
+  const isFs = useFullscreen();
+  if (isFs) return null; // important: unmount overlay in fullscreen
 
   const enter = async () => {
     try {
       await document.documentElement.requestFullscreen();
     } catch {
-      // ignored
+      /* ignore */
     }
   };
 
   return (
-    <Card className="p-4 border-dashed">
-      <div className="mb-2 font-medium">
-        Enter fullscreen to start/continue the exam
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-background/80 backdrop-blur">
+      <div className="rounded-lg border bg-card p-6 text-center shadow">
+        <p className="mb-3 font-medium">
+          Please enter fullscreen to continue the exam.
+        </p>
+        <Button onClick={enter}>Enter fullscreen</Button>
       </div>
-      <Button onClick={enter}>Enter fullscreen</Button>
-    </Card>
+    </div>
   );
 }

@@ -2,10 +2,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 export function useCountdown(deadlineIso?: string) {
-  const deadline = useMemo(
-    () => (deadlineIso ? new Date(deadlineIso).getTime() : null),
-    [deadlineIso],
-  );
+  const deadline = useMemo(() => {
+    if (!deadlineIso) {
+      // debug
+      // console.warn("[countdown] no deadlineIso");
+      return null;
+    }
+    const t = new Date(deadlineIso).getTime();
+    if (Number.isNaN(t)) {
+      console.error("[countdown] invalid deadlineIso:", deadlineIso);
+      return null;
+    }
+    return t;
+  }, [deadlineIso]);
+
   const [now, setNow] = useState<number>(() => Date.now());
   const raf = useRef<number | null>(null);
 
@@ -21,8 +31,12 @@ export function useCountdown(deadlineIso?: string) {
     };
   }, [deadline]);
 
-  const msLeft = deadline ? Math.max(0, deadline - now) : 0;
-  const expired = deadline ? msLeft <= 0 : false;
+  if (!deadline) {
+    return { msLeft: 0, expired: false, label: "--:--" }; // clearer than 00:00 while waiting
+  }
+
+  const msLeft = Math.max(0, deadline - now);
+  const expired = msLeft <= 0;
 
   const mm = Math.floor(msLeft / 60000);
   const ss = Math.floor((msLeft % 60000) / 1000);

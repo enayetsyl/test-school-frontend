@@ -20,7 +20,7 @@ let refreshPromise: Promise<string> | null = null;
 
 // Use a bare client for refresh so we don't send stale Authorization
 const authless = axios.create({
-  baseURL: "http://localhost:8080/api/v1",
+  baseURL: import.meta.env.VITE_API_BASE_URL,
   withCredentials: true,
 });
 

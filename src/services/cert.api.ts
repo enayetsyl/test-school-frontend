@@ -1,5 +1,5 @@
 // src/services/cert.api.ts
-import { toQueryError, type ApiOk, type QueryError } from "@/types/api";
+import { toQueryError, type QueryError } from "@/types/api";
 import { baseApi } from "./baseApi";
 import { api } from "@/utils/axios";
 import { z } from "zod";
@@ -35,8 +35,11 @@ export const certApi = baseApi.injectEndpoints({
   endpoints: (b) => ({
     myCertification: b.query<{ certification: ICertification | null }, void>({
       query: () => ({ url: "/certifications/me" }),
-      transformResponse: (raw: ApiOk<ICertification | null>) => ({
-        certification: raw.data ?? null,
+      transformResponse: (raw: {
+        success: boolean;
+        data: { certification: ICertification | null };
+      }) => ({
+        certification: raw.data?.certification ?? null,
       }),
       providesTags: ["Certs"],
     }),
